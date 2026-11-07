@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Social Poster</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="brand-mark"><path d="M3 11.5 20.5 4l-4.5 16.5-4.2-6.3L3 11.5Zm8.8 2.7 2.6 3.9 2.6-9.6-5.2 5.7Zm-1.2-1 5.6-6.1-9.4 4 3.8 2.1Z" fill="currentColor" /></svg>
+        <span>Social Poster</span>
+      </div>
+      <nav class="tabs" role="tablist" aria-label="Sections">
+        <button role="tab" data-tab="compose" aria-selected="true">Create post</button>
+        <button role="tab" data-tab="history" aria-selected="false">History</button>
+        <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+      </nav>
+      <div class="topbar-right">
+        <span id="conn-pill" class="pill" hidden></span>
+        <button id="logout-btn" class="link-btn" hidden>Log out</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- CREATE POST -->
+      <section id="tab-compose" class="tab-panel" role="tabpanel">
+        <div id="connect-banner" class="banner" hidden></div>
+
+        <div id="composer" class="layout">
+          <div class="col">
+            <section class="card">
+              <h2><span class="step">1</span> Photos or video</h2>
+              <label id="dropzone" class="dropzone" tabindex="0">
+                <input id="file-input" type="file" accept="image/*,video/*" multiple hidden />
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                <strong>Drop photos or a video here</strong>
+                <span>or click to choose · up to 10 photos (JPG, PNG, WebP) or 1 video (MP4, MOV)</span>
+              </label>
+              <div id="media-grid" class="media-grid"></div>
+            </section>
+
+            <section class="card">
+              <h2><span class="step">2</span> Caption &amp; hashtags</h2>
+              <label class="field-label" for="caption">Caption</label>
+              <textarea id="caption" rows="5" placeholder="Write your caption… emojis welcome 🎉"></textarea>
+
+              <label class="field-label" for="tag-entry">Hashtags</label>
+              <div id="tag-box" class="tag-box">
+                <input id="tag-entry" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type a hashtag, then press space or Enter" />
+              </div>
+              <div class="row gap wrap tag-tools">
+                <select id="tagset-select" aria-label="Insert a saved hashtag set"></select>
+                <button id="tagset-save" class="btn small ghost" type="button">Save as set</button>
+                <button id="tags-clear" class="btn small ghost" type="button">Clear hashtags</button>
+              </div>
+
+              <div id="video-options" class="video-options" hidden>
+                <label class="field-label" for="cover-seconds">Instagram cover frame <span class="muted">(optional)</span></label>
+                <div class="row gap">
+                  <input id="cover-seconds" type="number" min="0" step="0.1" inputmode="decimal" placeholder="0" />
+                  <span class="muted">seconds into the video</span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="col">
+            <section class="card">
+              <h2><span class="step">3</span> Where to post</h2>
+              <div id="targets"></div>
+            </section>
+
+            <section class="card">
+              <h2>Preview</h2>
+              <div id="preview" class="preview"></div>
+              <div id="counters" class="counters"></div>
+            </section>
+
+            <div id="problems" class="problems"></div>
+            <button id="post-btn" class="btn primary big" type="button" disabled>Post now</button>
+            <p class="muted center small">Posts go live immediately on every place you selected.</p>
+          </div>
+        </div>
+
+        <section id="progress" class="card progress" hidden></section>
+      </section>
+
+      <!-- HISTORY -->
+      <section id="tab-history" class="tab-panel" role="tabpanel" hidden>
+        <div class="row between wrap gap">
+          <h1>History</h1>
+          <button id="history-clear" class="btn small ghost" type="button">Clear history</button>
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="tab-settings" class="tab-panel" role="tabpanel" hidden>
+        <h1>Settings</h1>
+        <section class="card" id="connection-card"></section>
+        <section class="card">
+          <h2>Facebook Groups</h2>
+          <p class="muted">
+            Since April 2024 Meta no longer lets any app post in Facebook Groups. Save your groups here and Social Poster
+            will get each post ready (text copied, photo ready, group opened) so posting takes just a few clicks.
+          </p>
+          <form id="group-form" class="group-form">
+            <input id="group-name" type="text" placeholder="Group name (e.g. City Buy & Sell)" maxlength="120" required />
+            <input id="group-url" type="url" placeholder="https://www.facebook.com/groups/…" required />
+            <button class="btn" type="submit">Add group</button>
+          </form>
+          <ul id="group-list" class="plain-list"></ul>
+        </section>
+        <section class="card">
+          <h2>Saved hashtag sets</h2>
+          <p class="muted">Create sets from the hashtag box on the Create post tab with “Save as set”.</p>
+          <ul id="tagset-list" class="plain-list"></ul>
+        </section>
+        <section class="card" id="system-card"></section>
+      </section>
+    </main>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+  </body>
+</html>
