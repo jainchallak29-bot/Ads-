@@ -98,6 +98,14 @@ test('sales can mark sold only while the admin allows it', async () => {
   const plot = doc(d, 'projects', PID, 'plots', 'p1');
   await assertSucceeds(updateDoc(plot, { status: 'sold', buyerName: 'Ravi', updatedBy: 'sales1', updatedAt: 3, updatedByName: 'Sam' }));
   await assertFails(updateDoc(plot, { status: 'gone', updatedBy: 'sales1' }));
+  await assertSucceeds(updateDoc(plot, { status: 'token', updatedBy: 'sales1' }));
+  await assertFails(updateDoc(plot, { status: 'blocked', updatedBy: 'sales1' }));
+  await assertFails(updateDoc(plot, { block: 'A', updatedBy: 'sales1' }));
+  await assertFails(updateDoc(plot, { premiums: ['x'], updatedBy: 'sales1' }));
+  // a plot the admin marked "Not for sale" can't be changed by sales
+  await assertSucceeds(updateDoc(doc(db('owner'), 'projects', PID, 'plots', 'p1'), { status: 'blocked' }));
+  await assertFails(updateDoc(plot, { status: 'available', updatedBy: 'sales1' }));
+  await assertSucceeds(updateDoc(doc(db('owner'), 'projects', PID, 'plots', 'p1'), { status: 'sold' }));
   await assertSucceeds(setDoc(doc(d, 'projects', PID, 'activity', 'a1'), { plotId: 'p1', action: 'status', by: 'sales1', at: 3 }));
   await assertFails(setDoc(doc(d, 'projects', PID, 'activity', 'a2'), { plotId: 'p1', action: 'status', by: 'owner', at: 3 }));
 

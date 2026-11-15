@@ -81,7 +81,9 @@ service cloud.firestore {
           || (salesMayEdit(pid)
               && request.resource.data.diff(resource.data).affectedKeys()
                    .hasOnly(['status', 'buyerName', 'buyerPhone', 'bookingDate', 'notes', 'updatedAt', 'updatedBy', 'updatedByName'])
-              && request.resource.data.status in ['available', 'booked', 'sold']
+              // Sales can't use or undo "Not for sale" (blocked)
+              && request.resource.data.status in ['available', 'token', 'booked', 'agreement', 'sold']
+              && resource.data.status != 'blocked'
               && request.resource.data.updatedBy == request.auth.uid);
       }
 

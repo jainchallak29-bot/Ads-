@@ -6,7 +6,7 @@ import { getRandomBytes } from 'expo-crypto';
 
 import { generateCode, normalizeCode } from '../codes';
 import type { Activity, LayoutData, Member, NewProjectInput, Plot, PlotPatch, Project, ProjectCodes, Role } from '../types';
-import { UserError, type Backend, type ErrCb, type LayoutReplace, type ProjectPatch, type ShapeEdit, type Unsub, type Who } from './types';
+import { UserError, type Backend, type BulkItem, type ErrCb, type LayoutReplace, type ProjectPatch, type ShapeEdit, type Unsub, type Who } from './types';
 
 const KEY = (pid: string) => `local-project:${pid}`;
 const CODES_KEY = 'local-codes';
@@ -153,6 +153,19 @@ export class LocalBackend implements Backend {
         this.log(s, { plotId: before.id, plotNumber: before.number, action: 'status', from: before.status, to: patch.status, byName: who.name });
       } else if (patch.number && patch.number !== before.number) {
         this.log(s, { plotId: before.id, plotNumber: patch.number, action: 'renamed', from: before.number, to: patch.number, byName: who.name });
+      }
+    });
+  }
+
+  async bulkUpdatePlots(pid: string, items: BulkItem[], who: Who) {
+    await this.mutate(pid, (s) => {
+      for (const { before, patch } of items) {
+        const cur = s.plots[before.id];
+        if (!cur) continue;
+        s.plots[before.id] = { ...cur, ...patch, updatedAt: Date.now(), updatedBy: LOCAL_UID, updatedByName: who.name };
+        if (patch.status && patch.status !== before.status) {
+          this.log(s, { plotId: before.id, plotNumber: before.number, action: 'status', from: before.status, to: patch.status, byName: who.name });
+        }
       }
     });
   }

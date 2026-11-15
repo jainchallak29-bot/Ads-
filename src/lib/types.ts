@@ -6,9 +6,74 @@
 
 export type Pt = { x: number; y: number };
 
-export type PlotStatus = 'available' | 'booked' | 'sold';
+/**
+ * Sale stages. 'sold' is the final stage (shown as "Sold" by default; an admin
+ * can rename it, e.g. "Registered"). 'blocked' = not for sale.
+ */
+export type PlotStatus = 'available' | 'token' | 'booked' | 'agreement' | 'sold' | 'blocked';
 
-export const PLOT_STATUSES: PlotStatus[] = ['available', 'booked', 'sold'];
+export const ALL_STATUSES: PlotStatus[] = ['available', 'token', 'booked', 'agreement', 'sold', 'blocked'];
+export const DEFAULT_STATUSES: PlotStatus[] = ['available', 'booked', 'sold'];
+
+export interface StatusConfig {
+  enabled: PlotStatus[];
+  labels: Partial<Record<PlotStatus, string>>;
+}
+
+/** Optional features; each one can be switched off per project ("skippable"). */
+export interface Features {
+  /** Sales status changes become requests that an admin approves */
+  approval: boolean;
+  /** Base rate, block rates and premiums (corner, park facing, ...) */
+  pricing: boolean;
+  /** Instalments, payments and receipts (admins only) */
+  payments: boolean;
+  /** Brokers and commission (admins only) */
+  commission: boolean;
+  /** Enquiries, site visits, follow-ups */
+  leads: boolean;
+  /** Public customer link with QR code */
+  share: boolean;
+  /** Group plots into blocks / phases */
+  blocks: boolean;
+  /** Push notifications for bookings and approvals */
+  notifications: boolean;
+  /** Photos and documents on plots (needs Firebase Storage) */
+  files: boolean;
+  /** "You are here" on site and directions to plots */
+  gps: boolean;
+}
+
+export const DEFAULT_FEATURES: Features = {
+  approval: false,
+  pricing: true,
+  payments: true,
+  commission: true,
+  leads: true,
+  share: true,
+  blocks: true,
+  notifications: true,
+  files: true,
+  gps: true,
+};
+
+export type PremiumKind = 'pct' | 'perUnit' | 'fixed';
+
+export interface Premium {
+  id: string;
+  name: string;
+  /** pct: % of the base price; perUnit: added to the rate per area unit; fixed: lump sum */
+  kind: PremiumKind;
+  value: number;
+}
+
+export interface Pricing {
+  /** default rate per project area unit */
+  baseRate: number | null;
+  /** rate per block, overrides the base rate */
+  blockRates: Record<string, number>;
+  premiums: Premium[];
+}
 
 export type Role = 'admin' | 'sales';
 
@@ -34,8 +99,12 @@ export interface Plot {
   isCorner?: boolean;
   /** Rate per project area unit (e.g. ₹ per sq.yd). */
   rate?: number | null;
-  /** Total price. If empty, rate × area is shown. */
+  /** Total price. If empty, it is calculated from the rate / price list. */
   price?: number | null;
+  /** Block or phase, e.g. "A" or "Phase 2" */
+  block?: string;
+  /** ids of premiums from the project price list that apply to this plot */
+  premiums?: string[];
   buyerName?: string;
   buyerPhone?: string;
   /** YYYY-MM-DD */
@@ -93,6 +162,9 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   layoutVersion: number;
+  statuses?: StatusConfig;
+  features?: Partial<Features>;
+  pricing?: Pricing;
 }
 
 export interface Member {

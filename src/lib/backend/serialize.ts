@@ -31,6 +31,8 @@ export function docToPlot(id: string, d: Record<string, any>): Plot {
     isCorner: !!d.isCorner,
     rate: d.rate ?? null,
     price: d.price ?? null,
+    block: d.block ?? '',
+    premiums: Array.isArray(d.premiums) ? d.premiums.map(String) : [],
     buyerName: d.buyerName ?? '',
     buyerPhone: d.buyerPhone ?? '',
     bookingDate: d.bookingDate ?? '',

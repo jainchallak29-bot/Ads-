@@ -1,22 +1,24 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useApp } from '@/components/AppProvider';
+import { BulkBar } from '@/components/BulkBar';
+import { MapFilters } from '@/components/MapFilters';
 import { PlotMap, type MapOverlay } from '@/components/PlotMap';
 import { PlotSheet } from '@/components/PlotSheet';
 import { Banner, Button, H, IconButton, Loading, Muted, PromptModal, Row, confirm } from '@/components/ui';
 import { useProject } from '@/hooks/useProject';
 import { boundsOf, dist, pointInPolygon, polygonArea } from '@/lib/geometry';
 import { deleteCorner, insertCorner, isSimplePolygon, mergePlots, moveCorner, snapPoint, splitNames, splitPlot } from '@/lib/shapes';
-import { STATUS_COLOR, STATUS_LABEL } from '@/lib/status';
-import type { Plot, PlotStatus, Pt } from '@/lib/types';
+import { comparePlotNumbers } from '@/lib/cad/detect';
+import { features, statusLabel } from '@/lib/status';
+import type { Plot, PlotPatch, PlotStatus, Pt } from '@/lib/types';
 import { C } from '@/theme';
 
-type Mode = 'view' | 'edit' | 'add' | 'corners' | 'split' | 'merge';
+type Mode = 'view' | 'edit' | 'add' | 'corners' | 'split' | 'merge' | 'multi';
 
 const HINTS: Record<Mode, string> = {
   view: '',
@@ -25,6 +27,7 @@ const HINTS: Record<Mode, string> = {
   corners: 'Tap a blue corner, then tap where it should go. Tap a white dot to add a corner.',
   split: 'Tap two points to draw the cut line across the plot.',
   merge: 'Tap the neighbouring plot to merge with.',
+  multi: '',
 };
 
 export default function ProjectMap() {
@@ -35,6 +38,8 @@ export default function ProjectMap() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<PlotStatus | null>(null);
+  const [blockFilter, setBlockFilter] = useState<string | null>(null);
+  const [multiIds, setMultiIds] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [focus, setFocus] = useState<{ bounds: ReturnType<typeof boundsOf>; key: number } | null>(null);
   const [mode, setMode] = useState<Mode>('view');
@@ -53,11 +58,12 @@ export default function ProjectMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.name, data.membership?.role]);
 
-  const counts = useMemo(() => {
-    const c = { available: 0, booked: 0, sold: 0 };
-    for (const p of plots) c[p.status]++;
-    return c;
-  }, [plots]);
+  const blocks = useMemo(
+    () => (features(project).blocks ? [...new Set(plots.map((p) => p.block).filter((b): b is string => !!b))].sort(comparePlotNumbers) : []),
+    [plots, project],
+  );
+  const matches = useCallback((p: Plot) => (!filter || p.status === filter) && (!blockFilter || p.block === blockFilter), [filter, blockFilter]);
+  const fadedIds = useMemo(() => (filter || blockFilter ? new Set(plots.filter((p) => !matches(p)).map((p) => p.id)) : null), [plots, filter, blockFilter, matches]);
 
   const plotAt = useCallback(
     (pt: Pt): Plot | null => {
@@ -127,6 +133,11 @@ export default function ProjectMap() {
     const snapTol = 14 * upp;
     const others = (excludeId?: string) => plots.filter((p) => p.id !== excludeId).map((p) => p.polygon);
     switch (mode) {
+      case 'multi': {
+        const hit = plotAt(pt);
+        if (hit) setMultiIds((ids) => (ids.includes(hit.id) ? ids.filter((x) => x !== hit.id) : [...ids, hit.id]));
+        return;
+      }
       case 'view':
       case 'edit': {
         const hit = plotAt(pt);
@@ -216,7 +227,7 @@ export default function ProjectMap() {
 
   const setStatus = (s: PlotStatus) => {
     if (!selected || s === selected.status) return;
-    run(() => backend.updatePlot(id, selected, { status: s }, who), `Plot ${selected.number} marked ${STATUS_LABEL[s]}`);
+    run(() => backend.updatePlot(id, selected, { status: s }, who), `Plot ${selected.number} marked ${statusLabel(project, s)}`);
   };
 
   const doSearch = () => {
@@ -265,7 +276,7 @@ export default function ProjectMap() {
     );
   }
 
-  const editing = mode !== 'view';
+  const editing = mode !== 'view' && mode !== 'multi';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.mapBg }} edges={['bottom', 'left', 'right']}>
@@ -281,54 +292,53 @@ export default function ProjectMap() {
         }}
       />
 
-      <View style={styles.top}>
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={18} color={C.muted} />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            onSubmitEditing={doSearch}
-            placeholder="Find plot no."
-            placeholderTextColor="#98A2B3"
-            style={styles.searchInput}
-            returnKeyType="search"
-            autoCapitalize="characters"
-            testID="search-input"
-          />
-        </View>
-        <View style={styles.stats}>
-          {(['available', 'booked', 'sold'] as PlotStatus[]).map((s) => (
-            <Pressable
-              key={s}
-              onPress={() => setFilter(filter === s ? null : s)}
-              style={[styles.stat, filter === s && { backgroundColor: STATUS_COLOR[s] }]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: filter === s }}
-              testID={`stat-${s}`}
-            >
-              <View style={[styles.dot, { backgroundColor: filter === s ? '#fff' : STATUS_COLOR[s] }]} />
-              <Text style={[styles.statText, filter === s && { color: '#fff' }]}>
-                {counts[s]} {STATUS_LABEL[s]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
+      <MapFilters
+        project={project}
+        plots={plots}
+        search={search}
+        onSearch={setSearch}
+        onSubmitSearch={doSearch}
+        status={filter}
+        onStatus={setFilter}
+        blocks={blocks}
+        block={blockFilter}
+        onBlock={setBlockFilter}
+      />
 
       <View style={{ flex: 1 }}>
         <PlotMap
           plots={plots}
           layout={layout}
           bounds={project.bounds}
-          selectedIds={selectedId ? [selectedId] : []}
-          highlightStatus={filter}
+          selectedIds={mode === 'multi' ? multiIds : selectedId ? [selectedId] : []}
+          fadedIds={fadedIds}
           overlay={overlay}
           onTap={onTap}
           focus={focus}
           testID="plot-map"
         />
 
-        {editing ? (
+        {mode === 'multi' ? (
+          <BulkBar
+            project={project}
+            selected={plots.filter((p) => multiIds.includes(p.id))}
+            blocks={blocks}
+            onApply={(fn: (p: Plot) => PlotPatch | null, label: string) => {
+              const items = plots
+                .filter((p) => multiIds.includes(p.id))
+                .map((p) => ({ before: p, patch: fn(p) }))
+                .filter((x): x is { before: Plot; patch: PlotPatch } => !!x.patch);
+              if (!items.length) return toast('Nothing to change');
+              run(() => backend.bulkUpdatePlots(id, items, who), label);
+            }}
+            onSelectAll={() => setMultiIds(plots.filter(matches).map((p) => p.id))}
+            onClear={() => setMultiIds([])}
+            onDone={() => {
+              setMultiIds([]);
+              setMode('view');
+            }}
+          />
+        ) : editing ? (
           <View style={styles.editBar}>
             <Text style={styles.editHint}>{mode === 'edit' && selected ? `Plot ${selected.number} selected.` : HINTS[mode]}</Text>
             {mode === 'edit' ? (
@@ -402,10 +412,29 @@ export default function ProjectMap() {
             )}
           </View>
         ) : selected ? (
-          <PlotSheet plot={selected} project={project} canEditStatus={canEditStatus} onStatus={setStatus} onClose={() => setSelectedId(null)} />
+          <PlotSheet
+            plot={selected}
+            project={project}
+            canEditStatus={canEditStatus}
+            excludeStatuses={isAdmin ? [] : ['blocked']}
+            onStatus={setStatus}
+            onClose={() => setSelectedId(null)}
+          />
         ) : isAdmin ? (
           <View style={styles.fabWrap} pointerEvents="box-none">
             <Button small variant="secondary" icon="shapes-outline" title="Edit shapes" onPress={() => setMode('edit')} testID="edit-shapes" />
+            <Button
+              small
+              variant="secondary"
+              icon="checkbox-outline"
+              title="Select many"
+              onPress={() => {
+                setSelectedId(null);
+                setMultiIds([]);
+                setMode('multi');
+              }}
+              testID="select-many"
+            />
           </View>
         ) : null}
       </View>
@@ -430,13 +459,6 @@ export default function ProjectMap() {
 }
 
 const styles = StyleSheet.create({
-  top: { backgroundColor: '#fff', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, gap: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border },
-  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F2F4F7', borderRadius: 10, paddingHorizontal: 12 },
-  searchInput: { flex: 1, paddingVertical: 9, fontSize: 16, color: C.text },
-  stats: { flexDirection: 'row', gap: 6 },
-  stat: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 7, borderRadius: 8, backgroundColor: '#F2F4F7' },
-  dot: { width: 9, height: 9, borderRadius: 5 },
-  statText: { fontSize: 13, fontWeight: '700', color: C.text },
   editBar: {
     position: 'absolute',
     left: 10,
@@ -452,5 +474,5 @@ const styles = StyleSheet.create({
   },
   editHint: { fontSize: 13.5, color: C.muted, marginBottom: 8 },
   editRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  fabWrap: { position: 'absolute', left: 12, bottom: 12 },
+  fabWrap: { position: 'absolute', left: 12, bottom: 12, flexDirection: 'row', gap: 8 },
 });

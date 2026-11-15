@@ -123,10 +123,3 @@ export function fmtMoney(n: number | null | undefined, currency: string): string
   if (n == null || !Number.isFinite(n)) return '-';
   return `${currency}${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 }
-
-/** Total price: explicit price, else rate × area. */
-export function plotPrice(plot: Plot, project: Pick<Project, 'drawingUnit' | 'areaUnit'>): number | null {
-  if (plot.price != null && plot.price > 0) return plot.price;
-  if (plot.rate != null && plot.rate > 0) return Math.round(plot.rate * plotArea(plot, project));
-  return null;
-}

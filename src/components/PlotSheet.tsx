@@ -1,10 +1,12 @@
 import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Badge, Button, IconButton, InfoRow, Segmented } from '@/components/ui';
-import { STATUS_COLOR, STATUS_LABEL } from '@/lib/status';
+import { StatusPicker } from '@/components/StatusPicker';
+import { Badge, Button, IconButton, InfoRow } from '@/components/ui';
+import { applicablePremiums, plotPrice } from '@/lib/pricing';
+import { STATUS_COLOR, statusLabel } from '@/lib/status';
 import type { Plot, PlotStatus, Project } from '@/lib/types';
-import { fmtArea, fmtDimensions, fmtMoney, plotPrice } from '@/lib/units';
+import { fmtArea, fmtDimensions, fmtMoney } from '@/lib/units';
 import { C } from '@/theme';
 
 export function PlotSheet({
@@ -13,37 +15,35 @@ export function PlotSheet({
   canEditStatus,
   onStatus,
   onClose,
+  excludeStatuses = [],
 }: {
   plot: Plot;
   project: Project;
   canEditStatus: boolean;
   onStatus: (s: PlotStatus) => void;
   onClose: () => void;
+  excludeStatuses?: PlotStatus[];
 }) {
   const price = plotPrice(plot, project);
+  const premiums = applicablePremiums(plot, project);
   return (
     <View style={styles.sheet} testID="plot-sheet">
       <View style={styles.head}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.label}>PLOT</Text>
+          <Text style={styles.label}>{plot.block ? `PLOT · ${plot.block.toUpperCase()}` : 'PLOT'}</Text>
           <Text style={styles.number} testID="sheet-plot-number">
             {plot.number}
           </Text>
         </View>
-        <Badge text={STATUS_LABEL[plot.status]} color={STATUS_COLOR[plot.status]} />
+        <Badge text={statusLabel(project, plot.status)} color={STATUS_COLOR[plot.status]} />
         <IconButton icon="close" label="Close" onPress={onClose} />
       </View>
-      {canEditStatus ? (
-        <Segmented
-          value={plot.status}
-          onChange={onStatus}
-          options={(['available', 'booked', 'sold'] as PlotStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s], color: STATUS_COLOR[s] }))}
-        />
-      ) : null}
+      {canEditStatus ? <StatusPicker project={project} value={plot.status} onChange={onStatus} exclude={excludeStatuses} /> : null}
       <InfoRow label="Area" value={fmtArea(plot, project)} />
       <InfoRow label="Size" value={fmtDimensions(plot, project)} />
       {plot.facing || plot.isCorner ? <InfoRow label="Facing" value={`${plot.facing || ''}${plot.isCorner ? (plot.facing ? ' · ' : '') + 'Corner plot' : ''}`} /> : null}
       {price ? <InfoRow label="Price" value={fmtMoney(price, project.currency)} /> : null}
+      {premiums.length ? <InfoRow label="Premiums" value={premiums.map((x) => x.name).join(', ')} /> : null}
       {plot.buyerName || plot.buyerPhone ? <InfoRow label="Buyer" value={[plot.buyerName, plot.buyerPhone].filter(Boolean).join(' · ')} /> : null}
       {plot.updatedByName ? (
         <Text style={styles.updated}>

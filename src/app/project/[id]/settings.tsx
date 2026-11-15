@@ -4,9 +4,12 @@ import { useEffect, useState } from 'react';
 import { Share, StyleSheet, Text, View } from 'react-native';
 
 import { useApp } from '@/components/AppProvider';
+import { FeatureSettings } from '@/components/settings/FeatureSettings';
+import { StageSettings } from '@/components/settings/StageSettings';
 import { Badge, Banner, Button, Card, Field, H, IconButton, Loading, Muted, Row, Screen, Segmented, Toggle, confirm } from '@/components/ui';
 import { useProject } from '@/hooks/useProject';
 import { formatCode } from '@/lib/codes';
+import { features } from '@/lib/status';
 import { exportCsv, exportDxf, reportHtml } from '@/lib/export/exporters';
 import { sharePdf, shareTextFile } from '@/lib/files';
 import type { AreaUnit, DrawingUnit, LengthUnit, Member, ProjectCodes, Role } from '@/lib/types';
@@ -237,6 +240,19 @@ export default function Settings() {
           <Button variant="secondary" icon="layers-outline" title="CAD drawing (DXF) — plots coloured by status" loading={busy === 'dxf'} onPress={() => exportAs('dxf')} />
         </View>
       </Card>
+
+      {isAdmin ? <FeatureSettings project={project} /> : null}
+      {isAdmin ? <StageSettings project={project} /> : null}
+
+      {features(project).pricing ? (
+        <Card>
+          <H>Price list</H>
+          <Muted style={{ marginBottom: 10 }}>
+            {project.pricing?.baseRate ? `Base rate ${project.currency}${project.pricing.baseRate.toLocaleString('en-IN')}` : 'No base rate yet'} · {project.pricing?.premiums?.length || 0} premiums
+          </Muted>
+          <Button variant="secondary" icon="pricetags-outline" title="Open price list" onPress={() => router.push({ pathname: '/project/[id]/pricing', params: { id } })} testID="open-pricing" />
+        </Card>
+      ) : null}
 
       {isAdmin ? (
         <Card>

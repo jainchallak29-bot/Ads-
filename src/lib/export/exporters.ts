@@ -3,9 +3,10 @@
 import { DxfWriter, triangulate } from '../cad/dxfWrite';
 import { comparePlotNumbers } from '../cad/detect';
 import { labelPoint, polygonToPath } from '../geometry';
-import { STATUS_ACI, STATUS_COLOR, STATUS_FILL_SOLID, STATUS_LABEL } from '../status';
-import type { LayoutData, Plot, Project, Pt } from '../types';
-import { AREA_UNIT_SHORT, fmtDimensions, fmtMoney, fmtNum, plotArea, plotPrice } from '../units';
+import { applicablePremiums, plotPrice } from '../pricing';
+import { STATUS_ACI, STATUS_COLOR, STATUS_FILL_SOLID, enabledStatuses, isTaken, statusLabel } from '../status';
+import { ALL_STATUSES, type LayoutData, type Plot, type PlotStatus, type Project, type Pt } from '../types';
+import { AREA_UNIT_SHORT, fmtDimensions, fmtMoney, fmtNum, plotArea } from '../units';
 
 const INSUNITS: Record<Project['drawingUnit'], number> = { in: 1, ft: 2, mm: 4, cm: 5, m: 6 };
 
@@ -34,15 +35,11 @@ export function parsePaths(d: string): { pts: Pt[]; closed: boolean }[] {
 export function exportDxf(project: Project, plots: Plot[], layout: LayoutData | null, opts: { fill: boolean } = { fill: true }): string {
   const w = new DxfWriter(4);
   const toCad = (p: Pt): Pt => ({ x: p.x + project.origin.x, y: project.origin.y - p.y });
-  w.layer('LAYOUT', 8)
-    .layer('LAYOUT_TEXT', 8)
-    .layer('PLOT_AVAILABLE', STATUS_ACI.available)
-    .layer('PLOT_BOOKED', STATUS_ACI.booked)
-    .layer('PLOT_SOLD', STATUS_ACI.sold)
-    .layer('PLOT_NUMBERS', 7)
-    .layer('PLOT_STATUS', 7);
-  if (opts.fill) {
-    w.layer('PLOT_FILL_AVAILABLE', STATUS_ACI.available).layer('PLOT_FILL_BOOKED', STATUS_ACI.booked).layer('PLOT_FILL_SOLD', STATUS_ACI.sold);
+  w.layer('LAYOUT', 8).layer('LAYOUT_TEXT', 8).layer('PLOT_NUMBERS', 7).layer('PLOT_STATUS', 7);
+  const used = new Set<PlotStatus>([...enabledStatuses(project), ...plots.map((p) => p.status)]);
+  for (const st of ALL_STATUSES.filter((x) => used.has(x))) {
+    w.layer('PLOT_' + st.toUpperCase(), STATUS_ACI[st]);
+    if (opts.fill) w.layer('PLOT_FILL_' + st.toUpperCase(), STATUS_ACI[st]);
   }
 
   for (const chunk of layout?.paths || []) {
@@ -61,7 +58,7 @@ export function exportDxf(project: Project, plots: Plot[], layout: LayoutData | 
     const h = Math.max(lp.radius * 0.6, 1e-3);
     const c = toCad(lp.pt);
     w.text(p.number, { x: c.x, y: c.y + h * 0.3 }, h * 0.8, 'PLOT_NUMBERS');
-    w.text(STATUS_LABEL[p.status].toUpperCase(), { x: c.x, y: c.y - h * 0.55 }, h * 0.35, 'PLOT_STATUS', 0, STATUS_ACI[p.status]);
+    w.text(statusLabel(project, p.status).toUpperCase(), { x: c.x, y: c.y - h * 0.55 }, h * 0.35, 'PLOT_STATUS', 0, STATUS_ACI[p.status]);
   }
   return w.toString(INSUNITS[project.drawingUnit]);
 }
@@ -75,11 +72,13 @@ export function exportCsv(project: Project, plots: Plot[]): string {
   const au = AREA_UNIT_SHORT[project.areaUnit];
   const header = [
     'Plot No',
+    'Block',
     'Status',
     `Area (${au})`,
     'Dimensions',
     'Facing',
     'Corner',
+    'Premiums',
     `Rate (per ${au})`,
     'Price',
     'Buyer',
@@ -94,11 +93,15 @@ export function exportCsv(project: Project, plots: Plot[]): string {
     .sort((a, b) => comparePlotNumbers(a.number, b.number))
     .map((p) => [
       p.number,
-      STATUS_LABEL[p.status],
+      p.block || '',
+      statusLabel(project, p.status),
       plotArea(p, project).toFixed(2),
       fmtDimensions(p, project),
       p.facing || '',
       p.isCorner ? 'Yes' : '',
+      applicablePremiums(p, project)
+        .map((x) => x.name)
+        .join('; '),
       p.rate ?? '',
       plotPrice(p, project) ?? '',
       p.buyerName || '',
@@ -115,27 +118,31 @@ export function exportCsv(project: Project, plots: Plot[]): string {
 
 export interface Summary {
   total: number;
+  counts: Record<PlotStatus, number>;
   available: number;
-  booked: number;
-  sold: number;
+  /** token … sold */
+  taken: number;
   areaTotal: number;
-  areaSold: number;
-  valueSold: number;
+  areaTaken: number;
+  valueTaken: number;
   received: number;
 }
 
 export function summarize(project: Project, plots: Plot[]): Summary {
-  const s: Summary = { total: plots.length, available: 0, booked: 0, sold: 0, areaTotal: 0, areaSold: 0, valueSold: 0, received: 0 };
+  const counts = Object.fromEntries(ALL_STATUSES.map((x) => [x, 0])) as Record<PlotStatus, number>;
+  const s: Summary = { total: plots.length, counts, available: 0, taken: 0, areaTotal: 0, areaTaken: 0, valueTaken: 0, received: 0 };
   for (const p of plots) {
-    s[p.status]++;
+    counts[p.status]++;
     const a = plotArea(p, project);
     s.areaTotal += a;
-    if (p.status !== 'available') {
-      s.areaSold += a;
-      s.valueSold += plotPrice(p, project) || 0;
+    if (isTaken(p.status)) {
+      s.taken++;
+      s.areaTaken += a;
+      s.valueTaken += plotPrice(p, project) || 0;
     }
     s.received += p.amountReceived || 0;
   }
+  s.available = counts.available;
   return s;
 }
 
@@ -174,8 +181,8 @@ export function reportHtml(project: Project, plots: Plot[], layout: LayoutData |
   const rows = sortedPlots
     .map(
       (p) => `<tr>
-  <td><b>${esc(p.number)}</b></td>
-  <td><span class="dot" style="background:${STATUS_COLOR[p.status]}"></span>${STATUS_LABEL[p.status]}</td>
+  <td><b>${esc(p.number)}</b>${p.block ? '<br/><small>' + esc(p.block) + '</small>' : ''}</td>
+  <td><span class="dot" style="background:${STATUS_COLOR[p.status]}"></span>${esc(statusLabel(project, p.status))}</td>
   <td class="n">${fmtNum(plotArea(p, project))}</td>
   <td>${esc(fmtDimensions(p, project))}</td>
   <td>${esc(p.facing || '')}${p.isCorner ? ' (corner)' : ''}</td>
@@ -204,11 +211,11 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}
 <div class="muted">${project.location ? esc(project.location) + ' · ' : ''}Inventory report · ${date}</div>
 <div class="cards">
  <div class="card">Total plots<b>${s.total}</b></div>
- <div class="card" style="border-color:${STATUS_COLOR.available}">Available<b>${s.available}</b></div>
- <div class="card" style="border-color:${STATUS_COLOR.booked}">Booked<b>${s.booked}</b></div>
- <div class="card" style="border-color:${STATUS_COLOR.sold}">Sold<b>${s.sold}</b></div>
+ ${enabledStatuses(project)
+   .map((st) => `<div class="card" style="border-color:${STATUS_COLOR[st]}">${esc(statusLabel(project, st))}<b>${s.counts[st]}</b></div>`)
+   .join('')}
 </div>
-<div class="muted">Total area ${fmtNum(s.areaTotal)} ${au} · Booked/sold ${fmtNum(s.areaSold)} ${au} · Booked/sold value ${esc(fmtMoney(s.valueSold, project.currency))}</div>
+<div class="muted">Total area ${fmtNum(s.areaTotal)} ${au} · Booked/sold ${fmtNum(s.areaTaken)} ${au} · Booked/sold value ${esc(fmtMoney(s.valueTaken, project.currency))}</div>
 <div class="map">${layoutSvg(project, plots, layout)}</div>
 <table><thead><tr><th>Plot</th><th>Status</th><th>Area (${au})</th><th>Size</th><th>Facing</th><th>Price</th><th>Buyer</th><th>Booked on</th></tr></thead>
 <tbody>${rows}</tbody></table>

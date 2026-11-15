@@ -10,7 +10,7 @@ import Svg, { Circle, G, Line, Path, Polyline, Text as SvgText } from 'react-nat
 
 import { labelPoint, polygonToPath } from '@/lib/geometry';
 import { STATUS_COLOR, STATUS_FILL_SOLID } from '@/lib/status';
-import type { BgText, Bounds, LayoutData, Plot, PlotStatus, Pt } from '@/lib/types';
+import type { BgText, Bounds, LayoutData, Plot, Pt } from '@/lib/types';
 import { C } from '@/theme';
 
 export interface MapOverlay {
@@ -27,8 +27,8 @@ export interface PlotMapProps {
   layout: LayoutData | null;
   bounds: Bounds;
   selectedIds?: string[];
-  /** when set, plots with other statuses are greyed out */
-  highlightStatus?: PlotStatus | null;
+  /** plots greyed out (e.g. not matching the current filter) */
+  fadedIds?: Set<string> | null;
   neutral?: boolean;
   overlay?: MapOverlay;
   onTap?: (pt: Pt, unitsPerPx: number) => void;
@@ -57,20 +57,20 @@ const PlotShapes = memo(function PlotShapes({
   geo,
   plots,
   sw,
-  highlightStatus,
+  fadedIds,
   neutral,
 }: {
   geo: PlotGeo[];
   plots: Plot[];
   sw: number;
-  highlightStatus?: PlotStatus | null;
+  fadedIds?: Set<string> | null;
   neutral?: boolean;
 }) {
   return (
     <G>
       {geo.map((g, i) => {
         const p = plots[i];
-        const faded = highlightStatus && p.status !== highlightStatus;
+        const faded = fadedIds?.has(p.id);
         const fill = neutral ? '#D8E5F6' : faded ? '#EEEFEE' : STATUS_FILL_SOLID[p.status];
         const stroke = neutral ? C.primary : faded ? '#C4C9D0' : STATUS_COLOR[p.status];
         return <Path key={g.id} d={g.d} fill={fill} stroke={stroke} strokeWidth={sw} strokeLinejoin="round" />;
@@ -89,7 +89,7 @@ const Background = memo(function Background({ paths, sw }: { paths: string[]; sw
   );
 });
 
-export function PlotMap({ plots, layout, bounds, selectedIds = [], highlightStatus, neutral, overlay, onTap, focus, testID }: PlotMapProps) {
+export function PlotMap({ plots, layout, bounds, selectedIds = [], fadedIds, neutral, overlay, onTap, focus, testID }: PlotMapProps) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [tx] = useState(() => new Animated.Value(0));
   const [ty] = useState(() => new Animated.Value(0));
@@ -368,7 +368,7 @@ export function PlotMap({ plots, layout, bounds, selectedIds = [], highlightStat
                 {t.t}
               </SvgText>
             ))}
-            <PlotShapes geo={geo} plots={plots} sw={upp * 1.2} highlightStatus={highlightStatus} neutral={neutral} />
+            <PlotShapes geo={geo} plots={plots} sw={upp * 1.2} fadedIds={fadedIds} neutral={neutral} />
             {geo
               .filter((x) => selected.has(x.id))
               .map((x) => (

@@ -19,7 +19,14 @@ export interface Who {
   name: string;
 }
 
-export type ProjectPatch = Partial<Pick<Project, 'name' | 'location' | 'drawingUnit' | 'areaUnit' | 'lengthUnit' | 'currency' | 'salesCanEdit'>>;
+export type ProjectPatch = Partial<
+  Pick<Project, 'name' | 'location' | 'drawingUnit' | 'areaUnit' | 'lengthUnit' | 'currency' | 'salesCanEdit' | 'statuses' | 'features' | 'pricing'>
+>;
+
+export interface BulkItem {
+  before: Plot;
+  patch: PlotPatch;
+}
 
 export interface ShapeEdit {
   upserts: Plot[];
@@ -61,6 +68,8 @@ export interface Backend {
   getCodes(pid: string): Promise<ProjectCodes>;
   updateProject(pid: string, patch: ProjectPatch): Promise<void>;
   updatePlot(pid: string, before: Plot, patch: PlotPatch, who: Who): Promise<void>;
+  /** Same change for many plots at once (admin). */
+  bulkUpdatePlots(pid: string, items: BulkItem[], who: Who): Promise<void>;
   applyShapeEdit(pid: string, edit: ShapeEdit, who: Who): Promise<void>;
   replaceLayout(pid: string, data: LayoutReplace, who: Who): Promise<void>;
   regenerateCode(pid: string, role: Role): Promise<ProjectCodes>;

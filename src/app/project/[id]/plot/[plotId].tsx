@@ -1,14 +1,19 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { useEffect, useMemo, useState } from 'react';
-import { Linking, Text, View } from 'react-native';
+import { Linking, Pressable, Text, View } from 'react-native';
 
 import { useApp } from '@/components/AppProvider';
-import { Banner, Button, Card, Field, H, InfoRow, Loading, Muted, Screen, Segmented, Toggle } from '@/components/ui';
+import Ionicons from '@expo/vector-icons/Ionicons';
+
+import { StatusPicker } from '@/components/StatusPicker';
+import { Banner, Button, Card, Field, H, InfoRow, Loading, Muted, Row, Screen, Segmented, Toggle } from '@/components/ui';
 import { useProject } from '@/hooks/useProject';
-import { STATUS_COLOR, STATUS_LABEL } from '@/lib/status';
+import { comparePlotNumbers } from '@/lib/cad/detect';
+import { premiumText, priceBreakdown } from '@/lib/pricing';
+import { features, statusLabel } from '@/lib/status';
 import type { Activity, Plot, PlotPatch, PlotStatus } from '@/lib/types';
-import { AREA_UNIT_SHORT, computedAreaSqm, fmtArea, fmtDimensions, fmtMoney, fmtNum, plotPrice, sqmTo, toSqm } from '@/lib/units';
+import { AREA_UNIT_SHORT, computedAreaSqm, fmtArea, fmtDimensions, fmtMoney, fmtNum, sqmTo, toSqm } from '@/lib/units';
 import { C } from '@/theme';
 
 const FACINGS = ['', 'North', 'South', 'East', 'West', 'North-East', 'North-West', 'South-East', 'South-West'];
@@ -24,6 +29,8 @@ interface Form {
   status: PlotStatus;
   facing: string;
   isCorner: boolean;
+  block: string;
+  premiums: string[];
   area: string;
   rate: string;
   price: string;
@@ -49,6 +56,8 @@ export default function PlotDetails() {
     status: p.status,
     facing: p.facing || '',
     isCorner: !!p.isCorner,
+    block: p.block || '',
+    premiums: p.premiums || [],
     area: p.areaOverrideSqm && project ? fmtNum(sqmTo(p.areaOverrideSqm, project.areaUnit)).replace(/,/g, '') : '',
     rate: numStr(p.rate),
     price: numStr(p.price),
@@ -82,6 +91,8 @@ export default function PlotDetails() {
       set('number', form.number.trim() || plot.number, plot.number);
       set('facing', form.facing, plot.facing || '');
       if (form.isCorner !== !!plot.isCorner) p.isCorner = form.isCorner;
+      set('block', form.block.trim(), plot.block || '');
+      if ([...form.premiums].sort().join() !== [...(plot.premiums || [])].sort().join()) p.premiums = form.premiums;
       set('rate', numOrNull(form.rate), plot.rate ?? null);
       set('price', numOrNull(form.price), plot.price ?? null);
       set('amountReceived', numOrNull(form.amountReceived), plot.amountReceived ?? null);
@@ -111,7 +122,12 @@ export default function PlotDetails() {
   const statusEditable = canEditStatus;
   const au = AREA_UNIT_SHORT[project.areaUnit];
   const computed = sqmTo(computedAreaSqm(plot, project.drawingUnit), project.areaUnit);
-  const preview = { ...plot, ...patch };
+  const preview = { ...plot, ...patch } as Plot;
+  const f = features(project);
+  const pb = priceBreakdown(preview, project);
+  const blocks = [...new Set(plots.map((x) => x.block).filter((b): b is string => !!b))].sort(comparePlotNumbers);
+  const premiumList = project.pricing?.premiums || [];
+  const rateSourceText = pb.rateSource === 'plot' ? 'plot rate' : pb.rateSource === 'block' ? `block ${preview.block} rate` : pb.rateSource === 'base' ? 'base rate' : '';
 
   const save = async () => {
     setSaving(true);
@@ -132,20 +148,28 @@ export default function PlotDetails() {
 
       <Card>
         <H>Status</H>
-        <Segmented
+        <StatusPicker
+          project={project}
           value={form.status}
           disabled={!statusEditable}
-          onChange={(s) => setForm({ ...form, status: s, bookingDate: s !== 'available' && !form.bookingDate ? new Date().toISOString().slice(0, 10) : form.bookingDate })}
-          options={(['available', 'booked', 'sold'] as PlotStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s], color: STATUS_COLOR[s] }))}
+          exclude={isAdmin ? [] : ['blocked']}
+          onChange={(s) => setForm({ ...form, status: s, bookingDate: s !== 'available' && s !== 'blocked' && !form.bookingDate ? new Date().toISOString().slice(0, 10) : form.bookingDate })}
         />
         {!statusEditable ? <Muted>Only the admin can change plots in this project.</Muted> : null}
       </Card>
 
       <Card>
         <H>Plot</H>
-        <InfoRow label="Area" value={fmtArea(preview as Plot, project)} />
+        <InfoRow label="Area" value={fmtArea(preview, project)} />
         <InfoRow label="Size" value={fmtDimensions(plot, project)} />
-        <InfoRow label="Price" value={fmtMoney(plotPrice(preview as Plot, project), project.currency)} />
+        {f.blocks && preview.block ? <InfoRow label="Block" value={preview.block} /> : null}
+        <InfoRow label="Price" value={fmtMoney(pb.total, project.currency)} />
+        {pb.total && !pb.explicit && pb.rate ? (
+          <Muted style={{ fontSize: 12.5, marginTop: 4 }}>
+            {fmtNum(pb.area)} {au} × {fmtMoney(pb.rate, project.currency)} ({rateSourceText})
+            {pb.premiums.map((x) => ` ${premiumText(x, project.currency, au)} ${x.name}`).join(',')}
+          </Muted>
+        ) : null}
         <View style={{ height: 12 }} />
         {isAdmin ? (
           <>
@@ -161,13 +185,52 @@ export default function PlotDetails() {
             <Segmented label="Facing" value={form.facing} onChange={up('facing')} options={FACINGS.slice(1, 5).map((f) => ({ value: f, label: f }))} />
             <Segmented label="" value={form.facing} onChange={up('facing')} options={FACINGS.slice(5).map((f) => ({ value: f, label: f.replace('North', 'N').replace('South', 'S').replace('East', 'E').replace('West', 'W') }))} />
             <Toggle label="Corner plot" value={form.isCorner} onChange={up('isCorner')} />
-            <Field label={`Rate per ${au} (${project.currency})`} value={form.rate} onChangeText={up('rate')} keyboardType="decimal-pad" />
-            <Field label={`Total price (${project.currency})`} value={form.price} onChangeText={up('price')} keyboardType="decimal-pad" hint="Leave empty to use rate × area." />
+            {f.blocks ? (
+              <>
+                <Field label="Block / phase" value={form.block} onChangeText={up('block')} autoCapitalize="characters" placeholder="e.g. A or Phase 2" />
+                {blocks.length ? (
+                  <Row style={{ flexWrap: 'wrap', marginTop: -6, marginBottom: 12 }}>
+                    {blocks.map((b) => (
+                      <Button key={b} small variant={form.block === b ? 'primary' : 'secondary'} title={b} onPress={() => setForm({ ...form, block: b })} />
+                    ))}
+                  </Row>
+                ) : null}
+              </>
+            ) : null}
+            {f.pricing && premiumList.length ? (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: C.muted, marginBottom: 6 }}>PREMIUMS</Text>
+                {premiumList.map((pr) => {
+                  const on = form.premiums.includes(pr.id);
+                  return (
+                    <Pressable
+                      key={pr.id}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                      onPress={() => setForm({ ...form, premiums: on ? form.premiums.filter((x) => x !== pr.id) : [...form.premiums, pr.id] })}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }}
+                    >
+                      <Ionicons name={on ? 'checkbox' : 'square-outline'} size={22} color={on ? C.primary : C.muted} />
+                      <Text style={{ fontSize: 15, color: C.text, flex: 1 }}>{pr.name}</Text>
+                      <Muted>{premiumText(pr, project.currency, au)}</Muted>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+            <Field
+              label={`Rate per ${au} (${project.currency})`}
+              value={form.rate}
+              onChangeText={up('rate')}
+              keyboardType="decimal-pad"
+              hint={f.pricing ? 'Leave empty to use the price list (block / base rate).' : undefined}
+            />
+            <Field label={`Total price (${project.currency})`} value={form.price} onChangeText={up('price')} keyboardType="decimal-pad" hint="Leave empty to calculate it from the rate." />
           </>
         ) : (
           <>
             <InfoRow label="Facing" value={`${plot.facing || '-'}${plot.isCorner ? ' · Corner' : ''}`} />
-            <InfoRow label="Rate" value={plot.rate ? `${fmtMoney(plot.rate, project.currency)} / ${au}` : '-'} />
+            <InfoRow label="Rate" value={pb.rate ? `${fmtMoney(pb.rate, project.currency)} / ${au}` : '-'} />
           </>
         )}
       </Card>
@@ -191,7 +254,7 @@ export default function PlotDetails() {
             <View key={a.id} style={{ paddingVertical: 6, borderBottomWidth: 0.5, borderBottomColor: C.border }}>
               <Text style={{ color: C.text, fontSize: 14 }}>
                 {a.action === 'status'
-                  ? `${STATUS_LABEL[a.from as PlotStatus] ?? a.from} → ${STATUS_LABEL[a.to as PlotStatus] ?? a.to}`
+                  ? `${statusLabel(project, a.from as PlotStatus)} → ${statusLabel(project, a.to as PlotStatus)}`
                   : a.action === 'renamed'
                     ? `Renamed ${a.from} → ${a.to}`
                     : a.to}

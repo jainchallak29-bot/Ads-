@@ -7,7 +7,8 @@ import { exportCsv, exportDxf, parsePaths, reportHtml, summarize } from '../src/
 import { polygonArea } from '../src/lib/geometry';
 import { deleteCorner, insertCorner, isSimplePolygon, mergePlots, moveCorner, snapPoint, splitNames, splitPlot } from '../src/lib/shapes';
 import type { Plot, Project, Pt } from '../src/lib/types';
-import { fmtDimensions, plotArea, plotPrice } from '../src/lib/units';
+import { plotPrice, priceBreakdown } from '../src/lib/pricing';
+import { fmtDimensions, plotArea } from '../src/lib/units';
 
 const sq = (x: number, y: number, w: number, h: number): Pt[] => [
   { x, y },
@@ -110,8 +111,32 @@ test('CSV and report', () => {
   assert.ok(lines[1].startsWith('2,'), 'sorted naturally');
   assert.ok(lines[2].includes('"Ravi, Kumar"'));
   const s = summarize(project, plots);
-  assert.equal(s.sold, 1);
+  assert.equal(s.counts.sold, 1);
   assert.equal(s.available, 1);
+  assert.equal(s.taken, 1);
   const html = reportHtml(project, plots, null);
   assert.ok(html.includes('Green Valley') && html.includes('<svg'));
+});
+
+test('price list: base rate, block rate, plot rate and premiums', () => {
+  const pricing = {
+    baseRate: 10000,
+    blockRates: { B: 12000 },
+    premiums: [
+      { id: 'corner', name: 'Corner', kind: 'pct' as const, value: 10 },
+      { id: 'park', name: 'Park facing', kind: 'perUnit' as const, value: 500 },
+      { id: 'fee', name: 'Club', kind: 'fixed' as const, value: 50000 },
+    ],
+  };
+  const pr = { ...project, pricing };
+  const base: Plot = { id: 'a', number: '1', polygon: sq(0, 0, 30, 40), status: 'available' }; // 133.33 sq.yd
+  assert.equal(plotPrice(base, pr), Math.round((1200 / 9) * 10000));
+  assert.equal(plotPrice({ ...base, block: 'B' }, pr), Math.round((1200 / 9) * 12000));
+  assert.equal(plotPrice({ ...base, block: 'B', rate: 9000 }, pr), Math.round((1200 / 9) * 9000));
+  const all = { ...base, premiums: ['corner', 'park', 'fee'] };
+  assert.equal(plotPrice(all, pr), Math.round((1200 / 9) * 10500 * 1.1 + 50000));
+  assert.equal(priceBreakdown(all, pr).premiums.length, 3);
+  // explicit price wins; pricing switched off ignores the price list
+  assert.equal(plotPrice({ ...all, price: 777 }, pr), 777);
+  assert.equal(plotPrice(all, { ...pr, features: { pricing: false } }), null);
 });

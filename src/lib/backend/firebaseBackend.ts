@@ -36,7 +36,7 @@ import type { Activity, LayoutData, Member, NewProjectInput, Plot, PlotPatch, Pr
 import { emulatorHost, firebaseConfig } from './config';
 import { makeAuth } from './makeAuth';
 import { docToPlot, plotToDoc } from './serialize';
-import { UserError, type Backend, type ErrCb, type LayoutReplace, type ProjectPatch, type ShapeEdit, type Unsub, type Who } from './types';
+import { UserError, type Backend, type BulkItem, type ErrCb, type LayoutReplace, type ProjectPatch, type ShapeEdit, type Unsub, type Who } from './types';
 
 const BATCH_LIMIT = 400;
 const CHUNK_PREFIX = 'p';
@@ -331,6 +331,19 @@ export class FirebaseBackend implements Backend {
       b.set(...this.activity(pid, { plotId: before.id, plotNumber: patch.number, action: 'renamed', from: before.number, to: patch.number, byName: who.name }));
     }
     await soft(b.commit());
+  }
+
+  async bulkUpdatePlots(pid: string, items: BulkItem[], who: Who) {
+    const uid = await this.ready();
+    const now = Date.now();
+    const q = new BatchQueue(this.db);
+    for (const { before, patch } of items) {
+      q.update(this.sub(pid, 'plots', before.id), plotToDoc({ ...patch, updatedAt: now, updatedBy: uid, updatedByName: who.name }));
+      if (patch.status && patch.status !== before.status) {
+        q.set(...this.activity(pid, { plotId: before.id, plotNumber: before.number, action: 'status', from: before.status, to: patch.status, byName: who.name }));
+      }
+    }
+    await soft(q.commit());
   }
 
   async applyShapeEdit(pid: string, edit: ShapeEdit, who: Who) {
