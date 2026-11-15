@@ -34,6 +34,7 @@ import {
 import { getRandomBytes } from 'expo-crypto';
 
 import { generateCode, normalizeCode } from '../codes';
+import type { PublicDoc } from '../publicLayout';
 import { saleFields } from '../status';
 import type { Activity, Broker, LayoutData, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
 import { emulatorHost, firebaseConfig } from './config';
@@ -475,6 +476,66 @@ export class FirebaseBackend implements Backend {
     }
   }
 
+  private pub(token: string) {
+    return doc(this.db, 'publicLayouts', token);
+  }
+
+  watchPublic(token: string, cb: (d: PublicDoc | null) => void, err?: ErrCb): Unsub {
+    return onSnapshot(
+      this.pub(token),
+      (s) => cb(s.exists() ? (s.data() as PublicDoc) : null),
+      (e) => err?.(friendly(e)),
+    );
+  }
+
+  watchPublicLayout(token: string, cb: (l: LayoutData) => void, err?: ErrCb): Unsub {
+    return onSnapshot(
+      collection(this.db, 'publicLayouts', token, 'chunks'),
+      (s) => {
+        const chunks: { i: number; d: string }[] = [];
+        let texts: LayoutData['texts'] = [];
+        for (const d of s.docs) {
+          const v = d.data();
+          if (v.kind === 'paths') chunks.push({ i: v.i, d: v.d });
+          else if (v.kind === 'texts') texts = JSON.parse(v.json || '[]');
+        }
+        cb({ paths: chunks.sort((a, b) => a.i - b.i).map((c) => c.d), texts });
+      },
+      (e) => err?.(friendly(e)),
+    );
+  }
+
+  async publishPublic(token: string, data: Omit<PublicDoc, 'updatedAt'>, layout: LayoutData | null) {
+    await this.ready();
+    const q = new BatchQueue(this.db);
+    q.set(this.pub(token), { ...data, updatedAt: Date.now() });
+    if (layout) {
+      const old = await getDocs(collection(this.db, 'publicLayouts', token, 'chunks')).catch(() => null);
+      const keep = new Set<string>();
+      layout.paths.forEach((d, i) => {
+        keep.add('p' + i);
+        q.set(doc(this.db, 'publicLayouts', token, 'chunks', 'p' + i), { kind: 'paths', i, d });
+      });
+      keep.add('texts');
+      q.set(doc(this.db, 'publicLayouts', token, 'chunks', 'texts'), { kind: 'texts', json: JSON.stringify(layout.texts) });
+      old?.docs.filter((d) => !keep.has(d.id)).forEach((d) => q.delete(d.ref));
+    }
+    await soft(q.commit());
+  }
+
+  async updatePublicStatus(token: string, st: PublicDoc['st']) {
+    await this.ready();
+    await soft(writeBatch(this.db).update(this.pub(token), { st, stAt: Date.now() }).commit());
+  }
+
+  async unpublishPublic(token: string) {
+    const q = new BatchQueue(this.db);
+    const old = await getDocs(collection(this.db, 'publicLayouts', token, 'chunks')).catch(() => null);
+    old?.docs.forEach((d) => q.delete(d.ref));
+    q.delete(this.pub(token));
+    await soft(q.commit());
+  }
+
   async regenerateCode(pid: string, role: Role): Promise<ProjectCodes> {
     const current = await this.getCodes(pid);
     for (let attempt = 0; ; attempt++) {
@@ -520,6 +581,9 @@ export class FirebaseBackend implements Backend {
         const s = await getDocs(collection(this.db, 'projects', pid, name));
         s.docs.forEach((d) => q.delete(d.ref));
       }
+      const proj = await getDoc(this.projectRef(pid)).catch(() => null);
+      const shareToken = (proj?.data() as Project | undefined)?.share?.token;
+      if (shareToken) await this.unpublishPublic(shareToken).catch(() => undefined);
       const codes = await this.getCodes(pid).catch(() => null);
       if (codes) {
         q.delete(doc(this.db, 'joinCodes', codes.adminCode));

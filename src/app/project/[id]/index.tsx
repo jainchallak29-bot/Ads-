@@ -9,8 +9,10 @@ import { BulkBar } from '@/components/BulkBar';
 import { MapFilters } from '@/components/MapFilters';
 import { PlotMap, type MapOverlay } from '@/components/PlotMap';
 import { PlotSheet } from '@/components/PlotSheet';
+import { ShareSheet } from '@/components/ShareSheet';
 import { Banner, Button, H, IconButton, Loading, Muted, PromptModal, Row, confirm } from '@/components/ui';
 import { useProject } from '@/hooks/useProject';
+import { usePublicSync } from '@/hooks/usePublicSync';
 import { boundsOf, dist, pointInPolygon, polygonArea } from '@/lib/geometry';
 import { deleteCorner, insertCorner, isSimplePolygon, mergePlots, moveCorner, snapPoint, splitNames, splitPlot } from '@/lib/shapes';
 import { comparePlotNumbers } from '@/lib/cad/detect';
@@ -49,6 +51,8 @@ export default function ProjectMap() {
   const [prompt, setPrompt] = useState<null | { title: string; message?: string; initial?: string; onSubmit: (v: string) => void }>(null);
 
   const selected = plots.find((p) => p.id === selectedId) ?? null;
+  const [shareWhat, setShareWhat] = useState<null | 'layout' | 'plot'>(null);
+  usePublicSync(project, plots, layout, isAdmin, canEditStatus);
 
   // keep the list of projects on this phone up to date (name/role)
   useEffect(() => {
@@ -298,6 +302,7 @@ export default function ProjectMap() {
                   <Text style={styles.reqText}>⏳ {pendingIds.size}</Text>
                 </Pressable>
               ) : null}
+              <IconButton icon="share-social-outline" label="Share" onPress={() => setShareWhat('layout')} testID="open-share-sheet" />
               <IconButton icon="grid-outline" label="Menu" onPress={() => router.push({ pathname: '/project/[id]/menu', params: { id } })} testID="open-menu" />
               <IconButton icon="settings-outline" label="Settings" onPress={() => router.push({ pathname: '/project/[id]/settings', params: { id } })} testID="open-settings" />
             </Row>
@@ -437,6 +442,7 @@ export default function ProjectMap() {
             uid={uid}
             onDecide={(ok) => run(() => backend.decideRequest(id, selected, ok, who), ok ? 'Approved' : 'Rejected')}
             onCancelRequest={() => run(() => backend.cancelRequest(id, selected, who), 'Request cancelled')}
+            onShare={() => setShareWhat('plot')}
           />
         ) : isAdmin ? (
           <View style={styles.fabWrap} pointerEvents="box-none">
@@ -462,6 +468,15 @@ export default function ProjectMap() {
           <Banner tone="danger" text={data.error} />
         </View>
       ) : null}
+
+      <ShareSheet
+        visible={!!shareWhat}
+        onClose={() => setShareWhat(null)}
+        project={project}
+        plots={plots}
+        layout={layout}
+        plot={shareWhat === 'plot' ? selected : null}
+      />
 
       <PromptModal
         visible={!!prompt}

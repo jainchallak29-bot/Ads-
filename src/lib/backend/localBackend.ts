@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getRandomBytes } from 'expo-crypto';
 
 import { generateCode, normalizeCode } from '../codes';
+import type { PublicDoc } from '../publicLayout';
 import { saleFields } from '../status';
 import type { Activity, Broker, LayoutData, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
 import { UserError, type Backend, type BulkItem, type ErrCb, type LayoutReplace, type ProjectPatch, type ShapeEdit, type Unsub, type Who } from './types';
@@ -265,6 +266,49 @@ export class LocalBackend implements Backend {
       n = s.receiptNo;
     });
     return n;
+  }
+
+  private pubListeners = new Map<string, Set<Listener>>();
+  private async pubLoad(token: string): Promise<{ doc: PublicDoc | null; layout: LayoutData }> {
+    const raw = await AsyncStorage.getItem('public:' + token);
+    return raw ? JSON.parse(raw) : { doc: null, layout: { paths: [], texts: [] } };
+  }
+  private async pubSave(token: string, v: { doc: PublicDoc | null; layout: LayoutData } | null) {
+    if (v) await AsyncStorage.setItem('public:' + token, JSON.stringify(v));
+    else await AsyncStorage.removeItem('public:' + token);
+    this.pubListeners.get(token)?.forEach((l) => l());
+  }
+  private pubWatch<T>(token: string, pick: (v: { doc: PublicDoc | null; layout: LayoutData }) => T, cb: (v: T) => void): Unsub {
+    let alive = true;
+    const fire = () => {
+      this.pubLoad(token).then((v) => alive && cb(pick(v)));
+    };
+    let set = this.pubListeners.get(token);
+    if (!set) this.pubListeners.set(token, (set = new Set()));
+    set.add(fire);
+    fire();
+    return () => {
+      alive = false;
+      set!.delete(fire);
+    };
+  }
+
+  watchPublic(token: string, cb: (d: PublicDoc | null) => void): Unsub {
+    return this.pubWatch(token, (v) => v.doc, cb);
+  }
+  watchPublicLayout(token: string, cb: (l: LayoutData) => void): Unsub {
+    return this.pubWatch(token, (v) => v.layout, cb);
+  }
+  async publishPublic(token: string, data: Omit<PublicDoc, 'updatedAt'>, layout: LayoutData | null) {
+    const cur = await this.pubLoad(token);
+    await this.pubSave(token, { doc: { ...data, updatedAt: Date.now() }, layout: layout ?? cur.layout });
+  }
+  async updatePublicStatus(token: string, st: PublicDoc['st']) {
+    const cur = await this.pubLoad(token);
+    if (cur.doc) await this.pubSave(token, { ...cur, doc: { ...cur.doc, st } });
+  }
+  async unpublishPublic(token: string) {
+    await this.pubSave(token, null);
   }
 
   async regenerateCode(pid: string, role: Role) {

@@ -168,3 +168,27 @@ test('accounts and brokers are admin-only', async () => {
   await assertFails(setDoc(doc(s2, 'projects', PID, 'accounts', 'p2'), { plotId: 'p2' }));
   await assertFails(getDoc(doc(s2, 'projects', PID, 'private', 'counters')));
 });
+
+test('customer share link: public read, admin publish, status sync by members', async () => {
+  const owner = db('owner');
+  const b = writeBatch(owner);
+  b.set(doc(owner, 'publicLayouts', 'tok123'), { projectId: PID, name: 'GV', plots: {}, st: { p1: 'a' }, rev: 'x' });
+  b.set(doc(owner, 'publicLayouts', 'tok123', 'chunks', 'p0'), { kind: 'paths', i: 0, d: 'M0 0L1 1' });
+  await assertSucceeds(b.commit());
+  // anyone (even not signed in) can read it, but not list
+  await assertSucceeds(getDoc(doc(db(null), 'publicLayouts', 'tok123')));
+  await assertSucceeds(getDocs(collection(db(null), 'publicLayouts', 'tok123', 'chunks')));
+  await assertFails(getDocs(collection(db(null), 'publicLayouts')));
+  // strangers can't write; can't publish for someone else's project
+  await assertFails(updateDoc(doc(db('stranger'), 'publicLayouts', 'tok123'), { st: { p1: 'n' } }));
+  await assertFails(setDoc(doc(db('stranger'), 'publicLayouts', 'evil'), { projectId: PID, name: 'Fake' }));
+  // a sales member with edit rights may only sync statuses
+  await assertSucceeds(updateDoc(doc(db('s2'), 'publicLayouts', 'tok123'), { st: { p1: 'n' }, stAt: 5 }));
+  await assertFails(updateDoc(doc(db('s2'), 'publicLayouts', 'tok123'), { name: 'Hacked' }));
+  await assertFails(setDoc(doc(db('s2'), 'publicLayouts', 'tok123', 'chunks', 'p1'), { kind: 'paths', i: 1, d: '' }));
+  // admin unpublishes (doc + chunks in one batch)
+  const d = writeBatch(owner);
+  d.delete(doc(owner, 'publicLayouts', 'tok123', 'chunks', 'p0'));
+  d.delete(doc(owner, 'publicLayouts', 'tok123'));
+  await assertSucceeds(d.commit());
+});

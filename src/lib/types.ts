@@ -248,6 +248,8 @@ export interface Project {
   features?: Partial<Features>;
   pricing?: Pricing;
   company?: Company;
+  /** customer share link */
+  share?: { enabled: boolean; token: string; showPrices: boolean };
 }
 
 export interface Member {

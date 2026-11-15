@@ -20,6 +20,7 @@ export function PlotSheet({
   uid,
   onDecide,
   onCancelRequest,
+  onShare,
 }: {
   plot: Plot;
   project: Project;
@@ -31,6 +32,7 @@ export function PlotSheet({
   uid?: string | null;
   onDecide?: (approve: boolean) => void;
   onCancelRequest?: () => void;
+  onShare?: () => void;
 }) {
   const price = plotPrice(plot, project);
   const premiums = applicablePremiums(plot, project);
@@ -74,15 +76,18 @@ export function PlotSheet({
           {plot.updatedAt ? ' · ' + new Date(plot.updatedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}
         </Text>
       ) : null}
-      <Button
-        title="Details & buyer info"
-        icon="create-outline"
-        variant="secondary"
-        small
-        style={{ marginTop: 10 }}
-        onPress={() => router.push({ pathname: '/project/[id]/plot/[plotId]', params: { id: project.id, plotId: plot.id } })}
-        testID="open-details"
-      />
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+        <Button
+          title="Details & buyer info"
+          icon="create-outline"
+          variant="secondary"
+          small
+          style={{ flex: 1 }}
+          onPress={() => router.push({ pathname: '/project/[id]/plot/[plotId]', params: { id: project.id, plotId: plot.id } })}
+          testID="open-details"
+        />
+        {onShare ? <Button title="Share" icon="share-social-outline" variant="secondary" small onPress={onShare} testID="share-plot" /> : null}
+      </View>
     </View>
   );
 }

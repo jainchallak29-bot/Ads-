@@ -6,6 +6,7 @@ import { Share, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '@/components/AppProvider';
 import { CompanySettings } from '@/components/settings/CompanySettings';
 import { FeatureSettings } from '@/components/settings/FeatureSettings';
+import { ShareSettings } from '@/components/settings/ShareSettings';
 import { StageSettings } from '@/components/settings/StageSettings';
 import { Badge, Banner, Button, Card, Field, H, IconButton, Loading, Muted, Row, Screen, Segmented, Toggle, confirm } from '@/components/ui';
 import { useProject } from '@/hooks/useProject';
@@ -242,6 +243,7 @@ export default function Settings() {
         </View>
       </Card>
 
+      {isAdmin && features(project).share ? <ShareSettings project={project} plots={plots} layout={layout} /> : null}
       {isAdmin ? <FeatureSettings project={project} /> : null}
       {isAdmin ? <StageSettings project={project} /> : null}
       {isAdmin ? <CompanySettings project={project} /> : null}

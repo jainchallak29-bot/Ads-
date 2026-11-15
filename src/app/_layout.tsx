@@ -33,6 +33,7 @@ export default function RootLayout() {
           <Stack.Screen name="project/[id]/collections" options={{ title: 'Collections' }} />
           <Stack.Screen name="project/[id]/brokers" options={{ title: 'Brokers & commission' }} />
           <Stack.Screen name="project/[id]/accounts/[plotId]" options={{ title: 'Payments' }} />
+          <Stack.Screen name="share/[token]" options={{ title: 'Layout', headerBackVisible: false }} />
         </Stack>
       </AppProvider>
     </SafeAreaProvider>

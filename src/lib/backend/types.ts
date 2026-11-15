@@ -1,3 +1,4 @@
+import type { PublicDoc } from '../publicLayout';
 import type {
   Activity,
   Broker,
@@ -23,7 +24,7 @@ export interface Who {
 }
 
 export type ProjectPatch = Partial<
-  Pick<Project, 'name' | 'location' | 'drawingUnit' | 'areaUnit' | 'lengthUnit' | 'currency' | 'salesCanEdit' | 'statuses' | 'features' | 'pricing' | 'company'>
+  Pick<Project, 'name' | 'location' | 'drawingUnit' | 'areaUnit' | 'lengthUnit' | 'currency' | 'salesCanEdit' | 'statuses' | 'features' | 'pricing' | 'company' | 'share'>
 >;
 
 export interface BulkItem {
@@ -88,6 +89,15 @@ export interface Backend {
   deleteBroker(pid: string, id: string): Promise<void>;
   /** next receipt number for the project (1, 2, 3 …) */
   nextReceiptNo(pid: string): Promise<number>;
+
+  /** Customer share link (public, read without signing in) */
+  watchPublic(token: string, cb: (d: PublicDoc | null) => void, err?: ErrCb): Unsub;
+  watchPublicLayout(token: string, cb: (l: LayoutData) => void, err?: ErrCb): Unsub;
+  /** admin: write the public snapshot (and the background drawing when `layout` is given) */
+  publishPublic(token: string, doc: Omit<PublicDoc, 'updatedAt'>, layout: LayoutData | null): Promise<void>;
+  /** any member who may change statuses: keep Available / Not available up to date */
+  updatePublicStatus(token: string, st: PublicDoc['st']): Promise<void>;
+  unpublishPublic(token: string): Promise<void>;
   replaceLayout(pid: string, data: LayoutReplace, who: Who): Promise<void>;
   regenerateCode(pid: string, role: Role): Promise<ProjectCodes>;
   removeMember(pid: string, uid: string): Promise<void>;

@@ -140,3 +140,26 @@ test('price list: base rate, block rate, plot rate and premiums', () => {
   assert.equal(plotPrice({ ...all, price: 777 }, pr), 777);
   assert.equal(plotPrice(all, { ...pr, features: { pricing: false } }), null);
 });
+
+test('sharing: plot text, layout PDF, public snapshot', async () => {
+  const { layoutPdfHtml, plotPdfHtml, plotShareText } = await import('../src/lib/export/exporters');
+  const { buildPublic, publicStatuses, shareUrl } = await import('../src/lib/publicLayout');
+  const plots: Plot[] = [
+    { id: 'a', number: '1', polygon: sq(0, 0, 30, 40), status: 'sold', buyerName: 'Secret Buyer', price: 500000 },
+    { id: 'b', number: '2', polygon: sq(30, 0, 30, 40), status: 'available', block: 'A', price: 600000 },
+  ];
+  const txt = plotShareText({ ...project, company: { name: 'GV Devs', phone: '98765' } }, plots[1], { price: true, url: 'https://x/share/t?plot=2' });
+  assert.ok(txt.includes('Plot 2 (Block A)') && txt.includes('₹6,00,000') && txt.includes('GV Devs 98765') && txt.split('\n').length > 4);
+  assert.ok(!plotShareText(project, plots[1], { price: false }).includes('Price'));
+  const team = layoutPdfHtml(project, plots, null, 'team');
+  const cust = layoutPdfHtml(project, plots, null, 'customer');
+  assert.ok(team.includes('Sold 1') && cust.includes('Not available 1') && !cust.includes('Secret Buyer'));
+  assert.ok(plotPdfHtml(project, plots[1], plots, null, { price: true }).includes('Plot 2'));
+  const pub = buildPublic(project, plots, false);
+  assert.ok(!JSON.stringify(pub).includes('Secret Buyer'), 'no buyer data in public snapshot');
+  assert.equal(pub.plots.b.p, undefined, 'prices hidden');
+  assert.equal(buildPublic(project, plots, true).plots.b.p, 600000);
+  assert.deepEqual(publicStatuses(plots), { a: 'n', b: 'a' });
+  assert.notEqual(buildPublic(project, plots, true).rev, pub.rev);
+  assert.equal(shareUrl('https://gv.web.app/', 'tok', '12A'), 'https://gv.web.app/share/tok?plot=12A');
+});

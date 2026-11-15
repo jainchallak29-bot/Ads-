@@ -50,6 +50,24 @@ service cloud.firestore {
       allow delete: if isAdmin(resource.data.projectId);
     }
 
+    // ---- customer share link: readable by anyone who has the (unguessable) link
+    function pubPath(token) { return /databases/$(database)/documents/publicLayouts/$(token); }
+    match /publicLayouts/{token} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isAdmin(request.resource.data.projectId);
+      allow update: if (isAdmin(resource.data.projectId) && request.resource.data.projectId == resource.data.projectId)
+        // team members who may change statuses keep "Available / Not available" current
+        || (canEditStatus(resource.data.projectId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['st', 'stAt']));
+      allow delete: if isAdmin(resource.data.projectId);
+      match /chunks/{chunk} {
+        allow read: if true;
+        allow create, update: if isAdmin(getAfter(pubPath(token)).data.projectId);
+        allow delete: if isAdmin(get(pubPath(token)).data.projectId);
+      }
+    }
+
     match /projects/{pid} {
       allow get: if isMember(pid);
       allow list: if false;

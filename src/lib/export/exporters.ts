@@ -148,21 +148,31 @@ export function summarize(project: Project, plots: Plot[]): Summary {
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-/** Stand-alone SVG of the layout with coloured plots (used in the PDF report). */
-export function layoutSvg(project: Project, plots: Plot[], layout: LayoutData | null): string {
+export interface SvgOptions {
+  /** customer: green = available, grey = everything else */
+  mode?: 'team' | 'customer';
+  highlightId?: string | null;
+}
+
+/** Stand-alone SVG of the layout with coloured plots (used in PDFs). */
+export function layoutSvg(project: Project, plots: Plot[], layout: LayoutData | null, opts: SvgOptions = {}): string {
   const b = project.bounds;
   const w = b.maxX - b.minX || 1;
   const h = b.maxY - b.minY || 1;
   const pad = Math.max(w, h) * 0.02;
   const sw = Math.max(w, h) / 1200;
+  const colorOf = (p: Plot): PlotStatus => (opts.mode === 'customer' ? (p.status === 'available' ? 'available' : 'blocked') : p.status);
   const parts: string[] = [];
   parts.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${b.minX - pad} ${b.minY - pad} ${w + pad * 2} ${h + pad * 2}" style="width:100%;height:auto;background:#fff">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${b.minX - pad} ${b.minY - pad} ${w + pad * 2} ${h + pad * 2}" style="width:100%;height:auto;max-height:100%;background:#fff">`,
   );
   for (const d of layout?.paths || []) parts.push(`<path d="${d}" fill="none" stroke="#9aa0a6" stroke-width="${sw}"/>`);
   for (const p of plots) {
-    parts.push(`<path d="${polygonToPath(p.polygon)}" fill="${STATUS_FILL_SOLID[p.status]}" stroke="${STATUS_COLOR[p.status]}" stroke-width="${sw * 1.5}"/>`);
+    const st = colorOf(p);
+    parts.push(`<path d="${polygonToPath(p.polygon)}" fill="${STATUS_FILL_SOLID[st]}" stroke="${STATUS_COLOR[st]}" stroke-width="${sw * 1.5}"/>`);
   }
+  const hl = opts.highlightId ? plots.find((p) => p.id === opts.highlightId) : null;
+  if (hl) parts.push(`<path d="${polygonToPath(hl.polygon)}" fill="rgba(31,111,235,0.25)" stroke="#1F6FEB" stroke-width="${sw * 6}"/>`);
   for (const p of plots) {
     const lp = labelPoint(p.polygon);
     const fs = Math.max(lp.radius * 0.7, sw * 4);
@@ -172,6 +182,84 @@ export function layoutSvg(project: Project, plots: Plot[], layout: LayoutData | 
   }
   parts.push('</svg>');
   return parts.join('');
+}
+
+function companyLine(project: Project): string {
+  const co = project.company;
+  return [co?.name, co?.phone, co?.email].filter(Boolean).map((x) => esc(x!)).join(' · ');
+}
+
+/** One-page layout map with stages marked — for WhatsApp / print. */
+export function layoutPdfHtml(project: Project, plots: Plot[], layout: LayoutData | null, mode: 'team' | 'customer', qr?: { svg: string; url: string }): string {
+  const s = summarize(project, plots);
+  const date = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const legend =
+    mode === 'customer'
+      ? `<span class="lg"><i style="background:${STATUS_COLOR.available}"></i>Available ${s.available}</span><span class="lg"><i style="background:${STATUS_COLOR.blocked}"></i>Not available ${s.total - s.available}</span>`
+      : enabledStatuses(project)
+          .concat(ALL_STATUSES.filter((x) => !enabledStatuses(project).includes(x) && s.counts[x] > 0))
+          .map((st) => `<span class="lg"><i style="background:${STATUS_COLOR[st]}"></i>${esc(statusLabel(project, st))} ${s.counts[st]}</span>`)
+          .join('');
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>
+@page{size:A4 landscape;margin:12mm}
+body{font-family:Helvetica,Arial,sans-serif;color:#1f2328;margin:0;font-size:12px}
+.top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1f2328;padding-bottom:6px;margin-bottom:8px}
+h1{font-size:18px;margin:0}.muted{color:#667085}
+.lg{display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-weight:600}
+.lg i{display:inline-block;width:11px;height:11px;border-radius:2px}
+.map{height:150mm;display:flex;align-items:center;justify-content:center}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.qr{display:flex;align-items:center;gap:8px}.qr svg{width:26mm;height:26mm}
+</style></head><body>
+<div class="top"><div><h1>${esc(project.name)}</h1><div class="muted">${project.location ? esc(project.location) + ' · ' : ''}${mode === 'customer' ? 'Available plots' : 'Layout status'} · ${date}</div></div><div>${legend}</div></div>
+<div class="map">${layoutSvg(project, plots, layout, { mode })}</div>
+<div class="foot"><div class="muted">${companyLine(project)}</div>${qr ? `<div class="qr"><div class="muted" style="text-align:right">Scan to see live<br/>availability</div>${qr.svg}</div>` : ''}</div>
+</body></html>`;
+}
+
+/** Text message for WhatsApp/SMS about one plot. */
+export function plotShareText(project: Project, plot: Plot, opts: { price: boolean; url?: string }): string {
+  const lines = [`*${project.name}* — Plot ${plot.number}${plot.block ? ` (Block ${plot.block})` : ''}`];
+  lines.push(`Area: ${fmtNum(plotArea(plot, project))} ${AREA_UNIT_SHORT[project.areaUnit]}`);
+  lines.push(`Size: ${fmtDimensions(plot, project)}`);
+  if (plot.facing || plot.isCorner) lines.push(`Facing: ${[plot.facing, plot.isCorner ? 'Corner plot' : ''].filter(Boolean).join(', ')}`);
+  const price = opts.price ? plotPrice(plot, project) : null;
+  if (price) lines.push(`Price: ${fmtMoney(price, project.currency)}`);
+  lines.push(`Status: ${plot.status === 'available' ? 'Available' : 'Not available'}`);
+  if (project.location) lines.push(`Location: ${project.location}`);
+  if (opts.url) lines.push(`See it on the layout: ${opts.url}`);
+  const co = project.company;
+  if (co?.name || co?.phone) lines.push(`Contact: ${[co.name, co.phone].filter(Boolean).join(' ')}`);
+  return lines.join('\n');
+}
+
+/** One-page PDF about one plot, with the layout and the plot highlighted. */
+export function plotPdfHtml(project: Project, plot: Plot, plots: Plot[], layout: LayoutData | null, opts: { price: boolean }): string {
+  const price = opts.price ? plotPrice(plot, project) : null;
+  const rows: [string, string][] = [
+    ['Area', `${fmtNum(plotArea(plot, project))} ${AREA_UNIT_SHORT[project.areaUnit]}`],
+    ['Size', fmtDimensions(plot, project)],
+  ];
+  if (plot.block) rows.push(['Block', plot.block]);
+  if (plot.facing || plot.isCorner) rows.push(['Facing', [plot.facing, plot.isCorner ? 'Corner plot' : ''].filter(Boolean).join(', ')]);
+  if (price) rows.push(['Price', fmtMoney(price, project.currency)]);
+  rows.push(['Status', plot.status === 'available' ? 'Available' : 'Not available']);
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>
+@page{size:A4 landscape;margin:12mm}
+body{font-family:Helvetica,Arial,sans-serif;color:#1f2328;margin:0;font-size:13px}
+.wrap{display:flex;gap:18px}
+.info{width:32%}.map{flex:1;height:160mm;display:flex;align-items:center}
+h1{font-size:20px;margin:0 0 2px}.big{font-size:40px;font-weight:800;margin:10px 0}
+td{padding:6px 4px;border-bottom:1px solid #e4e7ec}td:first-child{color:#667085;width:40%}
+table{width:100%;border-collapse:collapse}.muted{color:#667085}
+</style></head><body>
+<div class="wrap"><div class="info"><h1>${esc(project.name)}</h1><div class="muted">${esc(project.location || '')}</div>
+<div class="big">Plot ${esc(plot.number)}</div><table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</table>
+<p class="muted" style="margin-top:16px">${companyLine(project)}</p></div>
+<div class="map">${layoutSvg(project, plots, layout, { mode: 'customer', highlightId: plot.id })}</div></div>
+</body></html>`;
 }
 
 export function reportHtml(project: Project, plots: Plot[], layout: LayoutData | null): string {
@@ -216,7 +304,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}
    .join('')}
 </div>
 <div class="muted">Total area ${fmtNum(s.areaTotal)} ${au} · Booked/sold ${fmtNum(s.areaTaken)} ${au} · Booked/sold value ${esc(fmtMoney(s.valueTaken, project.currency))}</div>
-<div class="map">${layoutSvg(project, plots, layout)}</div>
+<div class="map">${layoutSvg(project, plots, layout, { mode: 'team' })}</div>
 <table><thead><tr><th>Plot</th><th>Status</th><th>Area (${au})</th><th>Size</th><th>Facing</th><th>Price</th><th>Buyer</th><th>Booked on</th></tr></thead>
 <tbody>${rows}</tbody></table>
 </body></html>`;

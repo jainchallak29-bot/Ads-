@@ -14,3 +14,14 @@ export const firebaseConfig = {
 export const emulatorHost = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST ?? '';
 
 export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
+
+/**
+ * Base address of the web app for customer links. Defaults to Firebase Hosting's
+ * free address for this Firebase project (https://<projectId>.web.app).
+ */
+export function shareBaseUrl(): string {
+  const env = process.env.EXPO_PUBLIC_SHARE_URL ?? '';
+  if (env) return env;
+  if (typeof window !== 'undefined' && window.location?.origin?.startsWith('http')) return window.location.origin;
+  return firebaseConfig.projectId ? `https://${firebaseConfig.projectId}.web.app` : '';
+}
