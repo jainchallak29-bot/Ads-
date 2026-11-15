@@ -42,7 +42,8 @@ A test drawing is included: `samples/sample-layout.dxf` (send it to your phone a
    (Each phone signs in automatically; access to a project is controlled by the project codes.)
 3. **Create the database:** **Build → Firestore Database → Create database** → *Standard edition* → location **asia-south1 (Mumbai)** (or the region nearest to you) → start in **production mode** → Create.
 4. **Install the security rules:** in Firestore open the **Rules** tab, delete everything there, paste the full contents of the file [`firestore.rules`](firestore.rules) from this project, and click **Publish**.
-   These rules make sure only phones that entered a project's code can see it, and only Admins can change prices, shapes and codes.
+   These rules make sure only phones that entered a project's code can see it, only Admins can change prices, shapes and codes, and payments/commission are Admin-only.
+   *(Developers: `npx firebase-tools deploy --only firestore:rules,storage` does steps 4 and 2c in one go.)*
 5. **Connect the app:** click the gear icon → **Project settings → General → Your apps → `</>` (Web)** → give it a nickname → **Register app**.
    You'll see a `firebaseConfig` with `apiKey`, `authDomain`, `projectId`, … values.
 6. In the project folder, copy `.env.example` to a new file named `.env` and paste each value after the matching `=`:
@@ -58,6 +59,34 @@ A test drawing is included: `samples/sample-layout.dxf` (send it to your phone a
 
    These values are **not passwords** — your data is protected by the rules from step 4 — so it's fine to keep `.env` in the repository (the cloud build needs it).
 7. Restart: `npx expo start -c`. The yellow "this-phone-only mode" banner disappears.
+
+### 2b. Customer link web page (optional, ~5 minutes)
+
+The customer link (Settings → Customer link) opens a web page. Firebase hosts it for free at `https://<your-project-id>.web.app`:
+
+```bash
+npx expo export --platform web
+npx firebase-tools login
+npx firebase-tools deploy --only hosting --project <your-project-id>
+```
+
+Run these again after you change the app. The same address also opens the full app in a browser (handy on a laptop).
+To use your own domain instead, add it in Firebase Hosting and put `EXPO_PUBLIC_SHARE_URL=https://plots.yourdomain.com` in `.env`.
+
+### 2c. Photos & documents (optional)
+
+Files are kept in Firebase Storage, which needs the pay-as-you-go **Blaze** plan (you get 5 GB free; typical use costs a few rupees a month).
+**Build → Storage → Get started** → same location as the database. Then open the **Rules** tab, paste the contents of
+[`storage.rules`](storage.rules) and **Publish**. Private files (buyer ID, agreements) are visible to Admins only.
+If you skip this, switch off *Photos & documents* in **Settings → Features**.
+
+### 2d. Push notifications (optional)
+
+Phones get a notification when a plot is booked/sold and Admins get approval requests. This works in the installed app
+(not in Expo Go or a browser) after `eas init` (step 3). For Android also add the FCM key once:
+follow <https://docs.expo.dev/push-notifications/fcm-credentials/> (Firebase console → Project settings → Service accounts →
+generate key → `eas credentials` → Android → Push Notifications). iPhones are set up automatically by `eas build`.
+Follow-up reminders for leads work without any setup.
 
 **Free plan limits:** 50,000 reads and 20,000 writes per day. Opening a project reads each plot once
 (a 300-plot layout = ~300 reads), so a team of 10–20 people fits comfortably. If you outgrow it, switch the
@@ -123,14 +152,45 @@ Change the code, then run the same build commands again (or use `eas update` for
 ## 5. How the team uses it
 
 * **Admin** creates the project from the DXF. In **Settings ⚙︎** they find two codes:
-  * **Sales code** – for agents/staff: see the map and status. Admin can allow them to mark *Booked / Sold* and add buyer details.
-  * **Admin code** – full control (prices, shapes, codes, members). Share only with partners.
-* Others install the app → **Join with code**. Every change (sold, booked, buyer, shapes) shows on all phones within a second. Changes made without internet are sent automatically when the connection returns (keep the app open until then).
-* Tap a plot → see area, size, price, buyer → change status. Search by plot number. Tap the status counters to highlight only Available / Booked / Sold.
-* **Edit shapes** (Admin): add a plot by tapping its corners, move/add/delete corners, split a plot with a line, merge two neighbouring plots, rename, delete.
-* **Settings → Export**: PDF report (coloured map + list), Excel (CSV), and DXF back to CAD with plots on layers `PLOT_AVAILABLE` / `PLOT_BOOKED` / `PLOT_SOLD` (coloured fills on `PLOT_FILL_*`).
-* **Settings → Update layout from new DXF**: load a revised drawing; plots are matched by number so status and buyer details are kept.
-* Lost a phone or someone left? **Settings → Team → remove**, and use **New code** to stop the old code from working.
+  * **Sales code** – for agents/staff: see the map and status. Admin can allow them to mark plots and add buyer details.
+  * **Admin code** – full control (prices, shapes, payments, codes, members). Share only with partners.
+* Others install the app → **Join with code**. Every change shows on all phones within a second. Changes made without internet are sent automatically when the connection returns (keep the app open until then).
+* **Map:** tap a plot → area, size, price, buyer → change its stage. Search by number; tap the stage counters or a block to highlight only those plots.
+  **Share** (top right): layout PDF with all stages marked, a customer version (available only, with QR code), or the full report.
+* **Every feature can be switched off** in **Settings → Features** — what's off disappears for everyone in that project.
+
+**Sale stages & prices**
+* **Settings → Sale stages:** use Available / Token / Booked / Agreement / Sold (rename it e.g. "Registered") / Not for sale.
+* **Price list:** base rate, rate per block, and premiums (corner, park facing… as %, per sq.yd or fixed). Each plot shows its price and how it was worked out.
+* **Select many** (map, Admin): tap several plots → set stage, block, premiums or rate for all of them at once.
+
+**Approvals** (optional): when on, a Sales status change becomes a request (dashed orange outline). Admins see a ⏳ badge → **Approvals** → Approve / Reject.
+
+**Payments** (Admin): plot → **Open payments** → agreed price, payment plan (token + booking % + instalments), payments received.
+Saving a payment can create a **receipt PDF** (company name/logo from **Settings → Company details**) to send on WhatsApp.
+**Menu → Collections** lists overdue and upcoming payments with Call / WhatsApp reminder buttons.
+
+**Brokers** (Admin): **Menu → Brokers & commission** → add brokers with their commission; pick the broker on a plot's payments page.
+The brokers page shows earned, paid and pending commission.
+
+**Leads & site visits:** **Menu → Leads** → add enquiries, log site visits, set the next follow-up (the phone reminds you at 10 am),
+and **Book** an interested plot straight from the lead.
+
+**Customer link:** **Settings → Customer link** → on. Share the link or let customers scan the QR code: they see available plots,
+sizes (and prices if you allow), and can call / WhatsApp you. Buyer names and payments are never shown. (Needs step 2b.)
+
+**Plot sharing:** in a plot's card tap **Share** → WhatsApp text or a PDF with the plot highlighted.
+
+**GPS on site:** **Settings → GPS on site → Align with GPS**: tap a spot on the layout and stand there (or paste its coordinates
+from Google Maps); repeat for a second spot far away. Then the map's navigation button shows **you are here**, and plots get a **Go** button
+for directions (also on the customer page).
+
+**Photos & documents:** plot details → take or choose photos, attach PDFs. Turn on *Private* for ID proofs and agreements (Admins only). (Needs step 2c.)
+
+**Dashboard & activity:** **Menu → Dashboard** (sold vs available, bookings per month, blocks, sales by person and broker) and **Menu → Activity**.
+
+**Exports:** Settings → PDF report, Excel (CSV) and DXF back to CAD with plots on status layers (`PLOT_AVAILABLE`, `PLOT_BOOKED`, `PLOT_SOLD` …, fills on `PLOT_FILL_*`).
+**Update layout from new DXF** keeps status and buyer details by plot number. Lost a phone or someone left? **Settings → Team → remove**, then **New code**.
 
 ---
 
@@ -138,11 +198,11 @@ Change the code, then run the same build commands again (or use `eas update` for
 
 ```bash
 npm test             # CAD import, plot detection, shape editing, exports (Node test runner)
-npm run test:rules   # Firestore security rules against the local emulator (needs Java 11+)
+npm run test:rules   # Firestore + Storage security rules against the local emulators (needs Java 11+)
 npm run typecheck
 npm run lint
 npm run sample       # regenerate samples/sample-layout.dxf
 ```
 
 To develop against local Firebase emulators set `EXPO_PUBLIC_FIREBASE_EMULATOR_HOST=127.0.0.1` in `.env`
-and run `npx firebase-tools emulators:start --only auth,firestore`.
+and run `npx firebase-tools emulators:start --only auth,firestore,storage`.

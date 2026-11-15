@@ -51,3 +51,20 @@ export async function sharePdf(name: string, html: string, _orientation: 'landsc
   w.document.close();
   setTimeout(() => w.print(), 400);
 }
+
+/** Browser + device-only mode: files live only for this browser session. */
+export async function keepLocalCopy(uri: string, _name: string): Promise<{ uri: string; size: number }> {
+  const blob = await (await fetch(uri)).blob();
+  return { uri: URL.createObjectURL(blob), size: blob.size };
+}
+
+export async function removeLocalCopy(uri: string) {
+  if (uri.startsWith('blob:')) URL.revokeObjectURL(uri);
+}
+
+export async function pickAttachment(): Promise<{ uri: string; name: string; contentType: string } | null> {
+  const res = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*', '*/*'] });
+  if (res.canceled || !res.assets?.length) return null;
+  const a = res.assets[0];
+  return { uri: a.file ? URL.createObjectURL(a.file) : a.uri, name: a.name, contentType: a.mimeType || a.file?.type || 'application/octet-stream' };
+}

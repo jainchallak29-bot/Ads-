@@ -128,6 +128,17 @@ service cloud.firestore {
         allow read, write: if isAdmin(pid);
       }
 
+      // Photos & documents: private ones are for admins only
+      match /files/{fileId} {
+        allow read: if isMember(pid) && (resource.data.private == false || isAdmin(pid));
+        allow create: if canEditStatus(pid)
+          && request.resource.data.uploadedBy == request.auth.uid
+          && request.resource.data.private is bool
+          && (request.resource.data.private == false || isAdmin(pid));
+        allow update: if false;
+        allow delete: if isAdmin(pid) || (isMember(pid) && resource.data.uploadedBy == request.auth.uid);
+      }
+
       // Leads & site visits: the whole team works on them
       match /leads/{leadId} {
         allow read: if isMember(pid);

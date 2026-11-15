@@ -8,15 +8,23 @@ and keep every phone on your team in sync through a project code.
 
 ## Features
 
-- **CAD import (DXF)** – finds plots automatically from closed polylines, loose lines (gaps/overshoots are closed) or blocks with number attributes; picks up plot numbers from TEXT, MTEXT and attributes. Choose layers and drawing units with a live preview.
-- **Interactive map** – pinch-zoom, pan, tap a plot for area, size, facing, price and buyer; search by plot number; highlight Available / Booked / Sold.
-- **Status & buyer details** – status, buyer name/phone, booking date, amount received, notes, rate or total price, area override; change history per plot.
-- **Shape editing on the phone** (Admin) – add a plot by tapping corners, move/add/delete corners, split, merge, rename, delete.
-- **Real-time multi-phone sync** – Firebase Firestore; changes made without internet are sent when the connection returns.
-- **Two codes per project** – *Admin* (full control) and *Sales* (view; can mark booked/sold only if the admin allows). Regenerate codes and remove members any time. Enforced by [Firestore security rules](firestore.rules), not just the app.
-- **Exports** – PDF report (coloured map + table), Excel (CSV), and **DXF back to CAD** with plots on status layers.
-- **Re-import a revised drawing** – plots are matched by number so their status and details are kept.
-- Works without any setup in *this-phone-only mode* until Firebase keys are added.
+Every feature below can be switched off per project (Settings → Features).
+
+- **CAD import (DXF)** – finds plots automatically from closed polylines, loose lines (gaps/overshoots are closed) or blocks with number attributes; choose layers and units with a live preview; re-import a revised drawing and keep statuses.
+- **Interactive map** – pinch-zoom, tap a plot for area, size, facing, price and buyer; search; filter by stage or block.
+- **Sale stages** – Available, Token, Booked, Agreement, Sold/Registered, Not for sale (rename or switch off).
+- **Admin approval** – Sales requests, Admin approves or rejects.
+- **Price list** – base rate, block rates, premiums (corner, park facing …) with a price breakdown; bulk changes with *Select many*.
+- **Payments** – payment plans, payments received, overdue list with WhatsApp reminders, PDF receipts with your company details.
+- **Brokers & commission** – default and per-plot commission, earned / paid / pending.
+- **Leads & site visits** – enquiries, visits, follow-up reminders, book a plot from a lead.
+- **Sharing** – layout PDF with stages marked (team or customer version with QR), plot details by WhatsApp or PDF, public customer link.
+- **GPS on site** – "you are here" on the layout and directions to any plot.
+- **Photos & documents** – per plot, with Admin-only private files.
+- **Dashboard, activity feed and push notifications.**
+- **Shape editing** (Admin) – add, split, merge, move corners, rename, delete.
+- **Real-time multi-phone sync** with *Admin* and *Sales* codes, enforced by [Firestore](firestore.rules) and [Storage](storage.rules) security rules.
+- **Exports** – PDF report, Excel (CSV) and DXF back to CAD.
 
 ## Project structure
 
@@ -25,16 +33,22 @@ src/app/                     screens (Expo Router)
   index.tsx                  my projects
   join.tsx                   join with code
   import.tsx                 DXF import (new project / update layout)
-  project/[id]/index.tsx     map, status changes, shape editor
-  project/[id]/plot/…        plot details form + history
-  project/[id]/list.tsx      plot list with filters
-  project/[id]/settings.tsx  codes, team, units, exports, delete
+  share/[token].tsx          public customer page
+  project/[id]/index.tsx     map, status changes, shape editor, select many
+  project/[id]/plot/…        plot details, buyer, files, history
+  project/[id]/accounts/…    payments, plan, receipts, commission (admin)
+  project/[id]/leads/…       leads & site visits
+  project/[id]/…             menu, list, dashboard, approvals, collections,
+                             brokers, pricing, activity, gps, settings
 src/components/PlotMap.tsx   zoomable SVG layout map
 src/lib/cad/                 DXF reading, plot detection (polygonize), DXF writer
 src/lib/shapes.ts            merge / split / corner editing
 src/lib/export/              DXF, CSV and PDF report export
 src/lib/backend/             Firebase sync + device-only fallback
-firestore.rules              who may read/write what
+src/lib/finance.ts           instalments, overdue, commission, amount in words
+src/lib/pricing.ts           price list & premiums
+src/lib/geo.ts               two-point GPS alignment
+firestore.rules, storage.rules   who may read/write what
 tests/                       unit tests + security-rule tests
 samples/sample-layout.dxf    example layout to try the app
 ```

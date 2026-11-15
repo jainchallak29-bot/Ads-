@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp } from '@/components/AppProvider';
 import { PlotMap } from '@/components/PlotMap';
 import { Badge, Button, IconButton, InfoRow, Loading, Muted } from '@/components/ui';
+import { directionsUrl, makeGeo } from '@/lib/geo';
 import { boundsOf, pointInPolygon, polygonArea } from '@/lib/geometry';
 import type { PublicDoc } from '@/lib/publicLayout';
 import { unflatten } from '@/lib/backend/serialize';
@@ -129,6 +130,22 @@ export default function CustomerPage() {
             <InfoRow label="Size" value={fmtDimensions(sel, unitsProject)} />
             {sel.facing || sel.isCorner ? <InfoRow label="Facing" value={[sel.facing, sel.isCorner ? 'Corner plot' : ''].filter(Boolean).join(' · ')} /> : null}
             {doc.showPrices && sel.price && sel.status === 'available' ? <InfoRow label="Price" value={fmtMoney(sel.price, doc.currency)} /> : null}
+            {doc.geo ? (
+              <Button
+                small
+                variant="secondary"
+                icon="navigate-outline"
+                title="Directions to this plot"
+                style={{ marginTop: 10 }}
+                onPress={() => {
+                  const g = makeGeo(doc.geo!, doc.drawingUnit);
+                  if (!g) return;
+                  const b = boundsOf(sel.polygon);
+                  const ll = g.toLatLng({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+                  Linking.openURL(directionsUrl(ll.lat, ll.lng));
+                }}
+              />
+            ) : null}
             {phone && sel.status === 'available' ? (
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                 <Button small icon="call-outline" title="Call" onPress={() => Linking.openURL(`tel:${phone}`)} style={{ flex: 1 }} />

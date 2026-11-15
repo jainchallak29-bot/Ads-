@@ -52,6 +52,12 @@
         {
           "color": "#1F6FEB"
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Show where you are on the layout plan while you are on site."
+        }
       ]
     ],
     "experiments": {

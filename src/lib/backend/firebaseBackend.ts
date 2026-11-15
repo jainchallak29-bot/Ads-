@@ -32,11 +32,12 @@ import {
   type WriteBatch,
 } from 'firebase/firestore';
 import { getRandomBytes } from 'expo-crypto';
+import { connectStorageEmulator, deleteObject, getDownloadURL, getStorage, ref as storageRef, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 
 import { generateCode, normalizeCode } from '../codes';
 import type { PublicDoc } from '../publicLayout';
 import { saleFields } from '../status';
-import type { Activity, Broker, LayoutData, Lead, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
+import type { Activity, Broker, LayoutData, Lead, PlotFile, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
 import { emulatorHost, firebaseConfig } from './config';
 import { makeAuth } from './makeAuth';
 import { docToPlot, plotToDoc } from './serialize';
@@ -110,6 +111,7 @@ export class FirebaseBackend implements Backend {
   private app: FirebaseApp;
   private auth: Auth;
   private db: Firestore;
+  private storage: FirebaseStorage | null = null;
   private uidPromise: Promise<string> | null = null;
   private uid: string | null = null;
 
@@ -151,6 +153,14 @@ export class FirebaseBackend implements Backend {
 
   newId(): string {
     return doc(collection(this.db, 'ids')).id;
+  }
+
+  private store(): FirebaseStorage {
+    if (!this.storage) {
+      this.storage = getStorage(this.app);
+      if (emulatorHost) connectStorageEmulator(this.storage, emulatorHost, 9199);
+    }
+    return this.storage;
   }
 
   private me(): string {
@@ -559,6 +569,67 @@ export class FirebaseBackend implements Backend {
     await soft(writeBatch(this.db).delete(this.sub(pid, 'leads', id)).commit());
   }
 
+  watchFiles(pid: string, plotId: string, includePrivate: boolean, cb: (f: PlotFile[]) => void, err?: ErrCb): Unsub {
+    const col = collection(this.db, 'projects', pid, 'files');
+    // non-admins may only query files that aren't private (the rules check the query)
+    const q = includePrivate ? query(col, where('plotId', '==', plotId)) : query(col, where('plotId', '==', plotId), where('private', '==', false));
+    return onSnapshot(
+      q,
+      (s) => cb(s.docs.map((d) => ({ ...(d.data() as PlotFile), id: d.id })).sort((a, b) => b.at - a.at)),
+      (e) => err?.(friendly(e)),
+    );
+  }
+
+  private filePath(pid: string, f: Pick<PlotFile, 'id' | 'name'>) {
+    return `projects/${pid}/files/${f.id}/${f.name.replace(/[^\w.\- ]+/g, '_')}`;
+  }
+
+  async uploadFile(pid: string, plotId: string, file: { uri: string; name: string; contentType: string; kind: PlotFile['kind']; private: boolean }, who: Who): Promise<PlotFile> {
+    const uid = await this.ready();
+    const blob = await (await fetch(file.uri)).blob();
+    const meta: PlotFile = {
+      id: this.newId(),
+      plotId,
+      name: file.name,
+      contentType: file.contentType,
+      size: blob.size,
+      kind: file.kind,
+      private: file.private,
+      uploadedBy: uid,
+      uploadedByName: who.name,
+      at: Date.now(),
+    };
+    const { id, ...rest } = meta;
+    try {
+      // the record first: the storage rules check it
+      await setDoc(this.sub(pid, 'files', id), rest);
+      await uploadBytes(storageRef(this.store(), this.filePath(pid, meta)), blob, { contentType: file.contentType });
+      return meta;
+    } catch (e) {
+      await writeBatch(this.db).delete(this.sub(pid, 'files', id)).commit().catch(() => undefined);
+      const code = String((e as { code?: string })?.code || '');
+      if (code.startsWith('storage/')) {
+        throw new UserError(
+          code === 'storage/unauthorized'
+            ? 'Not allowed to upload here. Ask the project admin.'
+            : 'Could not upload. Photos & documents need Firebase Storage to be set up (SETUP.md, step 2c) and an internet connection.',
+        );
+      }
+      throw friendly(e);
+    }
+  }
+
+  async fileUrl(pid: string, f: PlotFile): Promise<string> {
+    return getDownloadURL(storageRef(this.store(), this.filePath(pid, f)));
+  }
+
+  async deleteFile(pid: string, f: PlotFile) {
+    await deleteObject(storageRef(this.store(), this.filePath(pid, f))).catch((e) => {
+      if (!String((e as { code?: string })?.code).includes('object-not-found')) throw friendly(e);
+    });
+    await writeBatch(this.db).delete(this.sub(pid, 'files', f.id)).commit();
+  }
+
   async setMyNotifications(pid: string, v: { pushToken?: string; notify?: boolean }) {
     const uid = await this.ready();
     const patch: Record<string, unknown> = {};
@@ -608,7 +679,11 @@ export class FirebaseBackend implements Backend {
     const uid = await this.ready();
     try {
       const q = new BatchQueue(this.db);
-      for (const name of ['plots', 'layout', 'activity', 'private', 'accounts', 'brokers', 'leads']) {
+      const files = await getDocs(collection(this.db, 'projects', pid, 'files')).catch(() => null);
+      for (const d of files?.docs || []) {
+        await deleteObject(storageRef(this.store(), this.filePath(pid, { id: d.id, name: (d.data() as PlotFile).name }))).catch(() => undefined);
+      }
+      for (const name of ['plots', 'layout', 'activity', 'private', 'accounts', 'brokers', 'leads', 'files']) {
         const s = await getDocs(collection(this.db, 'projects', pid, name));
         s.docs.forEach((d) => q.delete(d.ref));
       }

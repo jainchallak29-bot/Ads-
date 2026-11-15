@@ -8,6 +8,8 @@ import { Button, Muted, Toggle } from '@/components/ui';
 import { shareBaseUrl } from '@/lib/backend/config';
 import { layoutPdfHtml, plotPdfHtml, plotShareText, reportHtml } from '@/lib/export/exporters';
 import { sharePdf } from '@/lib/files';
+import { makeGeo, mapsUrl } from '@/lib/geo';
+import { boundsOf } from '@/lib/geometry';
 import { shareUrl } from '@/lib/publicLayout';
 import { qrSvg } from '@/lib/qr';
 import { features } from '@/lib/status';
@@ -37,6 +39,13 @@ export function ShareSheet({
   const linkOn = features(project).share && !!project.share?.enabled && !!project.share.token && !!shareBaseUrl();
   const link = linkOn ? shareUrl(shareBaseUrl(), project.share!.token, plot?.number) : '';
   const date = new Date().toISOString().slice(0, 10);
+  const geo = project.geo && features(project).gps ? makeGeo(project.geo, project.drawingUnit) : null;
+  const plotMaps = (() => {
+    if (!geo || !plot) return undefined;
+    const b = boundsOf(plot.polygon);
+    const ll = geo.toLatLng({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 });
+    return mapsUrl(ll.lat, ll.lng);
+  })();
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -57,7 +66,7 @@ export function ShareSheet({
           title="Send details (WhatsApp, SMS…)"
           icon="chatbubble-ellipses-outline"
           style={{ marginTop: 8 }}
-          onPress={() => run('text', () => Share.share({ message: plotShareText(project, plot, { price: withPrice, url: link || undefined }) }))}
+          onPress={() => run('text', () => Share.share({ message: plotShareText(project, plot, { price: withPrice, url: link || undefined, mapsUrl: plotMaps }) }))}
           testID="share-plot-text"
         />
         <Button

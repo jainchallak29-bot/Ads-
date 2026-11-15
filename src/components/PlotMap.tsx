@@ -20,6 +20,10 @@ export interface MapOverlay {
   midHandles?: Pt[];
   line?: Pt[];
   markers?: Pt[];
+  /** "you are here": position and accuracy radius in map units */
+  me?: { pt: Pt; r: number } | null;
+  /** reference points of the GPS alignment */
+  pins?: Pt[];
 }
 
 export interface PlotMapProps {
@@ -396,6 +400,20 @@ export function PlotMap({ plots, layout, bounds, selectedIds = [], fadedIds, pen
                 {l.t}
               </SvgText>
             ))}
+            {ov.pins?.map((m, i) => (
+              <G key={'pin' + i}>
+                <Circle cx={m.x} cy={m.y} r={9 * upp} fill="#F08C00" stroke="#fff" strokeWidth={upp * 2} />
+                <SvgText x={m.x} y={m.y + 3.5 * upp} fontSize={10 * upp} fontWeight="bold" fill="#fff" textAnchor="middle" fontFamily={FONT}>
+                  {String(i + 1)}
+                </SvgText>
+              </G>
+            ))}
+            {ov.me ? (
+              <G>
+                <Circle cx={ov.me.pt.x} cy={ov.me.pt.y} r={Math.max(ov.me.r, 8 * upp)} fill="rgba(31,111,235,0.15)" stroke="rgba(31,111,235,0.4)" strokeWidth={upp} />
+                <Circle cx={ov.me.pt.x} cy={ov.me.pt.y} r={7 * upp} fill="#1F6FEB" stroke="#fff" strokeWidth={upp * 2.5} />
+              </G>
+            ) : null}
             {ov.markers?.map((m, i) => (
               <Circle key={'m' + i} cx={m.x} cy={m.y} r={5 * upp} fill={C.danger} stroke="#fff" strokeWidth={upp * 1.5} />
             ))}

@@ -48,3 +48,28 @@ export async function sharePdf(name: string, html: string, orientation: 'landsca
   await new File(uri).copy(dest);
   await Sharing.shareAsync(dest.uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: name });
 }
+
+/** Device-only mode: keep a copy of a picked file in the app's documents folder. */
+export async function keepLocalCopy(uri: string, name: string): Promise<{ uri: string; size: number }> {
+  const dest = new File(Paths.document, name.replace(/[^\w.\- ]+/g, '_'));
+  if (dest.exists) dest.delete();
+  await new File(uri).copy(dest);
+  return { uri: dest.uri, size: dest.size ?? 0 };
+}
+
+export async function removeLocalCopy(uri: string) {
+  try {
+    const f = new File(uri);
+    if (f.exists) f.delete();
+  } catch {
+    // already gone
+  }
+}
+
+/** Pick any document (PDF, image, Word…) to attach. */
+export async function pickAttachment(): Promise<{ uri: string; name: string; contentType: string } | null> {
+  const res = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*', '*/*'], copyToCacheDirectory: true });
+  if (res.canceled || !res.assets?.length) return null;
+  const a = res.assets[0];
+  return { uri: a.uri, name: a.name, contentType: a.mimeType || 'application/octet-stream' };
+}

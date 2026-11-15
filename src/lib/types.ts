@@ -185,6 +185,23 @@ export interface Lead {
   updatedAt: number;
 }
 
+/** A photo or document attached to a plot. */
+export interface PlotFile {
+  id: string;
+  plotId: string;
+  name: string;
+  contentType: string;
+  size: number;
+  kind: 'photo' | 'doc';
+  /** admins only (e.g. buyer ID, agreement) */
+  private: boolean;
+  uploadedBy: string;
+  uploadedByName: string;
+  at: number;
+  /** device-only mode: where the file is kept on this phone */
+  localUri?: string;
+}
+
 export type Role = 'admin' | 'sales';
 
 export type DrawingUnit = 'mm' | 'cm' | 'm' | 'in' | 'ft';
@@ -283,6 +300,8 @@ export interface Project {
   company?: Company;
   /** customer share link */
   share?: { enabled: boolean; token: string; showPrices: boolean };
+  /** two reference points tying the drawing to GPS (GPS feature) */
+  geo?: { points: [{ x: number; y: number; lat: number; lng: number }, { x: number; y: number; lat: number; lng: number }] } | null;
 }
 
 export interface Member {

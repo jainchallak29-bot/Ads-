@@ -3,6 +3,7 @@ import type {
   Activity,
   Broker,
   Lead,
+  PlotFile,
   PlotAccount,
   PlotStatus,
   Bounds,
@@ -25,7 +26,7 @@ export interface Who {
 }
 
 export type ProjectPatch = Partial<
-  Pick<Project, 'name' | 'location' | 'drawingUnit' | 'areaUnit' | 'lengthUnit' | 'currency' | 'salesCanEdit' | 'statuses' | 'features' | 'pricing' | 'company' | 'share'>
+  Pick<Project, 'name' | 'location' | 'drawingUnit' | 'areaUnit' | 'lengthUnit' | 'currency' | 'salesCanEdit' | 'statuses' | 'features' | 'pricing' | 'company' | 'share' | 'geo'>
 >;
 
 export interface BulkItem {
@@ -104,6 +105,12 @@ export interface Backend {
   watchLeads(pid: string, cb: (l: Lead[]) => void, err?: ErrCb): Unsub;
   saveLead(pid: string, lead: Lead): Promise<void>;
   deleteLead(pid: string, id: string): Promise<void>;
+
+  /** Photos & documents (Firebase Storage) */
+  watchFiles(pid: string, plotId: string, includePrivate: boolean, cb: (f: PlotFile[]) => void, err?: ErrCb): Unsub;
+  uploadFile(pid: string, plotId: string, file: { uri: string; name: string; contentType: string; kind: PlotFile['kind']; private: boolean }, who: Who): Promise<PlotFile>;
+  fileUrl(pid: string, f: PlotFile): Promise<string>;
+  deleteFile(pid: string, f: PlotFile): Promise<void>;
 
   /** this phone's notification settings for a project */
   setMyNotifications(pid: string, v: { pushToken?: string; notify?: boolean }): Promise<void>;

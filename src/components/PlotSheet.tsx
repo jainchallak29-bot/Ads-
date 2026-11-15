@@ -21,6 +21,7 @@ export function PlotSheet({
   onDecide,
   onCancelRequest,
   onShare,
+  onDirections,
 }: {
   plot: Plot;
   project: Project;
@@ -33,6 +34,7 @@ export function PlotSheet({
   onDecide?: (approve: boolean) => void;
   onCancelRequest?: () => void;
   onShare?: () => void;
+  onDirections?: () => void;
 }) {
   const price = plotPrice(plot, project);
   const premiums = applicablePremiums(plot, project);
@@ -86,6 +88,7 @@ export function PlotSheet({
           onPress={() => router.push({ pathname: '/project/[id]/plot/[plotId]', params: { id: project.id, plotId: plot.id } })}
           testID="open-details"
         />
+        {onDirections ? <Button title="Go" icon="navigate-outline" variant="secondary" small onPress={onDirections} testID="directions" /> : null}
         {onShare ? <Button title="Share" icon="share-social-outline" variant="secondary" small onPress={onShare} testID="share-plot" /> : null}
       </View>
     </View>

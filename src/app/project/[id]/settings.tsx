@@ -312,6 +312,16 @@ export default function Settings() {
         </Card>
       ) : null}
 
+      {isAdmin && features(project).gps ? (
+        <Card>
+          <H>GPS on site</H>
+          <Muted style={{ marginBottom: 10 }}>
+            {project.geo ? 'The layout is aligned with GPS: phones can show “you are here” and give directions to plots.' : 'Align the layout with GPS once (two points) to show “you are here” on site and give directions to plots.'}
+          </Muted>
+          <Button variant="secondary" icon="navigate-outline" title={project.geo ? 'Change GPS alignment' : 'Align with GPS'} onPress={() => router.push({ pathname: '/project/[id]/gps', params: { id } })} testID="open-gps" />
+        </Card>
+      ) : null}
+
       {isAdmin ? (
         <Card>
           <H>Layout drawing</H>

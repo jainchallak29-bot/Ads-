@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useApp } from '@/components/AppProvider';
@@ -13,7 +13,10 @@ import { ShareSheet } from '@/components/ShareSheet';
 import { Banner, Button, H, IconButton, Loading, Muted, PromptModal, Row, confirm } from '@/components/ui';
 import { useProject } from '@/hooks/useProject';
 import { usePublicSync } from '@/hooks/usePublicSync';
+import { useMyLocation } from '@/hooks/useMyLocation';
 import { useTeamNotify } from '@/hooks/useTeamNotify';
+import { directionsUrl, makeGeo } from '@/lib/geo';
+import { DRAWING_UNIT_M } from '@/lib/units';
 import { boundsOf, dist, pointInPolygon, polygonArea } from '@/lib/geometry';
 import { deleteCorner, insertCorner, isSimplePolygon, mergePlots, moveCorner, snapPoint, splitNames, splitPlot } from '@/lib/shapes';
 import { comparePlotNumbers } from '@/lib/cad/detect';
@@ -55,6 +58,9 @@ export default function ProjectMap() {
   const [shareWhat, setShareWhat] = useState<null | 'layout' | 'plot'>(null);
   usePublicSync(project, plots, layout, isAdmin, canEditStatus);
   const notify = useTeamNotify(project, data.membership);
+  const [locating, setLocating] = useState(false);
+  const geo = useMemo(() => (project?.geo && features(project).gps ? makeGeo(project.geo, project.drawingUnit) : null), [project]);
+  const { loc, error: locError } = useMyLocation(locating && !!geo);
 
   // keep the list of projects on this phone up to date (name/role)
   useEffect(() => {
@@ -273,8 +279,11 @@ export default function ProjectMap() {
       };
     }
     if (mode === 'split') return { line: cut };
+    if (loc && geo && project) {
+      return { me: { pt: geo.fromLatLng(loc.lat, loc.lng), r: loc.accuracy / DRAWING_UNIT_M[project.drawingUnit] } };
+    }
     return {};
-  }, [mode, draft, selected, activeCorner, cut]);
+  }, [mode, draft, selected, activeCorner, cut, loc, geo, project]);
 
   if (data.loading) return <Loading text="Loading project…" />;
 
@@ -345,6 +354,26 @@ export default function ProjectMap() {
           testID="plot-map"
         />
 
+        {geo && mode === 'view' ? (
+          <View style={[styles.locate, selected ? { bottom: 330 } : null]} pointerEvents="box-none">
+            <IconButton
+              icon={locating ? 'navigate' : 'navigate-outline'}
+              label={locating ? 'Stop showing my location' : 'Show my location'}
+              color={locating ? '#fff' : C.primary}
+              style={[styles.locateBtn, locating && { backgroundColor: C.primary }]}
+              onPress={() => {
+                setLocating(!locating);
+                if (!locating) toast('Finding you on the layout…');
+              }}
+              testID="locate-me"
+            />
+          </View>
+        ) : null}
+        {locating && locError ? (
+          <View style={{ position: 'absolute', top: 10, left: 10, right: 60 }}>
+            <Banner tone="warn" text={locError} />
+          </View>
+        ) : null}
         {mode === 'multi' ? (
           <BulkBar
             project={project}
@@ -462,6 +491,15 @@ export default function ProjectMap() {
             }
             onCancelRequest={() => run(() => backend.cancelRequest(id, selected, who), 'Request cancelled')}
             onShare={() => setShareWhat('plot')}
+            onDirections={
+              geo
+                ? () => {
+                    const c = boundsOf(selected.polygon);
+                    const ll = geo.toLatLng({ x: (c.minX + c.maxX) / 2, y: (c.minY + c.maxY) / 2 });
+                    Linking.openURL(directionsUrl(ll.lat, ll.lng));
+                  }
+                : undefined
+            }
           />
         ) : isAdmin ? (
           <View style={styles.fabWrap} pointerEvents="box-none">
@@ -526,6 +564,8 @@ const styles = StyleSheet.create({
   },
   editHint: { fontSize: 13.5, color: C.muted, marginBottom: 8 },
   editRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  locate: { position: 'absolute', right: 12, bottom: 70 },
+  locateBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, elevation: 2 },
   reqBadge: { backgroundColor: '#F08C00', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, marginRight: 4 },
   reqText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   fabWrap: { position: 'absolute', left: 12, bottom: 12, flexDirection: 'row', gap: 8 },

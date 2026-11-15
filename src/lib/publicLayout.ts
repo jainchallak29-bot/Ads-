@@ -3,6 +3,7 @@
 
 import { flatten } from './backend/serialize';
 import { plotPrice } from './pricing';
+import { features } from './status';
 import type { Bounds, Plot, PlotStatus, Project } from './types';
 import { plotAreaSqm } from './units';
 
@@ -31,6 +32,8 @@ export interface PublicInfo {
   currency: string;
   showPrices: boolean;
   layoutVersion: number;
+  /** GPS alignment, so customers can get directions to a plot */
+  geo: Project['geo'] | null;
   /** fingerprint of everything above + plots, to know when to republish */
   rev: string;
 }
@@ -83,6 +86,7 @@ export function buildPublic(project: Project, plots: Plot[], showPrices: boolean
     currency: project.currency,
     showPrices,
     layoutVersion: project.layoutVersion,
+    geo: features(project).gps && project.geo ? project.geo : null,
   };
   const rev = hash(JSON.stringify([info, out]));
   return { ...info, rev, plots: out };

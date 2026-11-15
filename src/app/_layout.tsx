@@ -46,6 +46,7 @@ export default function RootLayout() {
           <Stack.Screen name="project/[id]/accounts/[plotId]" options={{ title: 'Payments' }} />
  <Stack.Screen name="project/[id]/leads/index" options={{ title: 'Leads & site visits' }} />
           <Stack.Screen name="project/[id]/leads/[leadId]" options={{ title: 'Lead' }} />
+ <Stack.Screen name="project/[id]/gps" options={{ title: 'GPS on site' }} />
           <Stack.Screen name="project/[id]/activity" options={{ title: 'Activity' }} />
           <Stack.Screen name="share/[token]" options={{ title: 'Layout', headerBackVisible: false }} />
         </Stack>

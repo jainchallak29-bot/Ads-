@@ -219,7 +219,7 @@ h1{font-size:18px;margin:0}.muted{color:#667085}
 }
 
 /** Text message for WhatsApp/SMS about one plot. */
-export function plotShareText(project: Project, plot: Plot, opts: { price: boolean; url?: string }): string {
+export function plotShareText(project: Project, plot: Plot, opts: { price: boolean; url?: string; mapsUrl?: string }): string {
   const lines = [`*${project.name}* — Plot ${plot.number}${plot.block ? ` (Block ${plot.block})` : ''}`];
   lines.push(`Area: ${fmtNum(plotArea(plot, project))} ${AREA_UNIT_SHORT[project.areaUnit]}`);
   lines.push(`Size: ${fmtDimensions(plot, project)}`);
@@ -229,6 +229,7 @@ export function plotShareText(project: Project, plot: Plot, opts: { price: boole
   lines.push(`Status: ${plot.status === 'available' ? 'Available' : 'Not available'}`);
   if (project.location) lines.push(`Location: ${project.location}`);
   if (opts.url) lines.push(`See it on the layout: ${opts.url}`);
+  if (opts.mapsUrl) lines.push(`Location: ${opts.mapsUrl}`);
   const co = project.company;
   if (co?.name || co?.phone) lines.push(`Contact: ${[co.name, co.phone].filter(Boolean).join(' ')}`);
   return lines.join('\n');

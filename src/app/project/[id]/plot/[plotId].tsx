@@ -6,6 +6,7 @@ import { Linking, Pressable, Text, View } from 'react-native';
 import { useApp } from '@/components/AppProvider';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { PlotFiles } from '@/components/PlotFiles';
 import { StatusPicker } from '@/components/StatusPicker';
 import { Banner, Button, Card, Field, H, InfoRow, Loading, Muted, Row, Screen, Segmented, Toggle } from '@/components/ui';
 import { useAccounts } from '@/hooks/useAccounts';
@@ -296,6 +297,12 @@ export default function PlotDetails() {
             testID="open-accounts"
           />
         </Card>
+      ) : null}
+
+      {f.files ? (
+        <View style={{ marginTop: 16 }}>
+          <PlotFiles projectId={id} plot={plot} isAdmin={isAdmin} canUpload={canEditStatus} />
+        </View>
       ) : null}
 
       {history.length ? (

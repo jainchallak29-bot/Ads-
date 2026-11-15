@@ -7,7 +7,8 @@ import { getRandomBytes } from 'expo-crypto';
 import { generateCode, normalizeCode } from '../codes';
 import type { PublicDoc } from '../publicLayout';
 import { saleFields } from '../status';
-import type { Activity, Broker, LayoutData, Lead, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
+import { keepLocalCopy, removeLocalCopy } from '../files';
+import type { Activity, Broker, LayoutData, Lead, PlotFile, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
 import { UserError, type Backend, type BulkItem, type ErrCb, type LayoutReplace, type ProjectPatch, type ShapeEdit, type Unsub, type Who } from './types';
 
 const KEY = (pid: string) => `local-project:${pid}`;
@@ -25,6 +26,7 @@ interface Stored {
   brokers?: Broker[];
   receiptNo?: number;
   leads?: Lead[];
+  files?: PlotFile[];
 }
 
 type Listener = () => void;
@@ -325,6 +327,31 @@ export class LocalBackend implements Backend {
   async deleteLead(pid: string, id: string) {
     await this.mutate(pid, (s) => {
       s.leads = (s.leads || []).filter((x) => x.id !== id);
+    });
+  }
+
+  watchFiles(pid: string, plotId: string, includePrivate: boolean, cb: (f: PlotFile[]) => void): Unsub {
+    return this.watch(pid, (s) => (s?.files ?? []).filter((f) => f.plotId === plotId && (includePrivate || !f.private)).sort((a, b) => b.at - a.at), cb);
+  }
+
+  async uploadFile(pid: string, plotId: string, file: { uri: string; name: string; contentType: string; kind: PlotFile['kind']; private: boolean }, who: Who): Promise<PlotFile> {
+    const id = this.newId();
+    const kept = await keepLocalCopy(file.uri, `${id}-${file.name}`);
+    const meta: PlotFile = { id, plotId, name: file.name, contentType: file.contentType, size: kept.size, kind: file.kind, private: file.private, uploadedBy: LOCAL_UID, uploadedByName: who.name, at: Date.now(), localUri: kept.uri };
+    await this.mutate(pid, (s) => {
+      s.files = [...(s.files || []), meta];
+    });
+    return meta;
+  }
+
+  async fileUrl(_pid: string, f: PlotFile): Promise<string> {
+    return f.localUri || '';
+  }
+
+  async deleteFile(pid: string, f: PlotFile) {
+    if (f.localUri) await removeLocalCopy(f.localUri);
+    await this.mutate(pid, (s) => {
+      s.files = (s.files || []).filter((x) => x.id !== f.id);
     });
   }
 
