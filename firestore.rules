@@ -86,6 +86,9 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['role', 'name', 'code', 'joinedAt'])
           && request.resource.data.name is string && request.resource.data.name.size() <= 60
           && validCode(pid, request.resource.data.code, request.resource.data.role);
+        // a phone may update its own notification settings
+        allow update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pushToken', 'notify']);
         // admins remove people; anyone can leave
         allow delete: if isAdmin(pid) || (signedIn() && request.auth.uid == uid);
       }
@@ -123,6 +126,14 @@ service cloud.firestore {
       }
       match /brokers/{brokerId} {
         allow read, write: if isAdmin(pid);
+      }
+
+      // Leads & site visits: the whole team works on them
+      match /leads/{leadId} {
+        allow read: if isMember(pid);
+        allow create: if isMember(pid) && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isMember(pid) && request.resource.data.createdBy == resource.data.createdBy;
+        allow delete: if isAdmin(pid) || (isMember(pid) && resource.data.createdBy == request.auth.uid);
       }
 
       match /layout/{chunk} {

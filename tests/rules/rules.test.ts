@@ -192,3 +192,18 @@ test('customer share link: public read, admin publish, status sync by members', 
   d.delete(doc(owner, 'publicLayouts', 'tok123'));
   await assertSucceeds(d.commit());
 });
+
+test('leads: team can add and update; members update only their notification settings', async () => {
+  const s2 = db('s2');
+  const lead = { name: 'Amit', phone: '99999', source: 'walkin', stage: 'new', interested: ['5'], visits: [], createdBy: 's2', createdByName: 'S2', createdAt: 1, updatedAt: 1 };
+  await assertSucceeds(setDoc(doc(s2, 'projects', PID, 'leads', 'l1'), lead));
+  await assertFails(setDoc(doc(s2, 'projects', PID, 'leads', 'l2'), { ...lead, createdBy: 'owner' }));
+  await assertSucceeds(updateDoc(doc(db('owner'), 'projects', PID, 'leads', 'l1'), { stage: 'visit' }));
+  await assertFails(getDoc(doc(db('stranger'), 'projects', PID, 'leads', 'l1')));
+  await assertFails(deleteDoc(doc(db('s3'), 'projects', PID, 'leads', 'l1')));
+  await assertSucceeds(deleteDoc(doc(s2, 'projects', PID, 'leads', 'l1')));
+  // notification settings
+  await assertSucceeds(updateDoc(doc(s2, 'projects', PID, 'members', 's2'), { pushToken: 'ExponentPushToken[x]', notify: true }));
+  await assertFails(updateDoc(doc(s2, 'projects', PID, 'members', 's2'), { pushToken: 'y', role: 'admin' }));
+  await assertFails(updateDoc(doc(s2, 'projects', PID, 'members', 's3'), { notify: false }));
+});

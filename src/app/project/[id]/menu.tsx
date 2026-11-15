@@ -15,6 +15,8 @@ type Route =
   | '/project/[id]/collections'
   | '/project/[id]/brokers'
   | '/project/[id]/pricing'
+  | '/project/[id]/leads'
+  | '/project/[id]/activity'
   | '/project/[id]/settings';
 
 interface Item {
@@ -36,11 +38,13 @@ export default function ProjectMenu() {
 
   const items: (Item | false)[] = [
     { icon: 'list-outline', title: 'All plots', sub: 'List with filters and search', route: '/project/[id]/list', testID: 'open-list' },
+    f.leads && { icon: 'person-add-outline', title: 'Leads & site visits', sub: 'Enquiries, visits and follow-ups', route: '/project/[id]/leads', testID: 'open-leads' },
     { icon: 'stats-chart-outline', title: 'Dashboard', sub: 'Sales, stages and collections at a glance', route: '/project/[id]/dashboard', testID: 'open-dashboard' },
     f.approval && { icon: 'hourglass-outline', title: 'Approvals', sub: isAdmin ? 'Booking requests from Sales' : 'Requests waiting for the admin', route: '/project/[id]/requests', badge: pending, testID: 'open-requests' },
     isAdmin && f.payments && { icon: 'wallet-outline', title: 'Collections', sub: 'Overdue and upcoming payments', route: '/project/[id]/collections', testID: 'open-collections' },
     isAdmin && f.commission && { icon: 'people-outline', title: 'Brokers & commission', sub: 'Who sold what, commission due', route: '/project/[id]/brokers', testID: 'open-brokers' },
     f.pricing && { icon: 'pricetags-outline', title: 'Price list', sub: 'Base rate, block rates, premiums', route: '/project/[id]/pricing', testID: 'open-pricing-menu' },
+    { icon: 'time-outline', title: 'Activity', sub: 'Who changed what, and when', route: '/project/[id]/activity', testID: 'open-activity' },
     { icon: 'settings-outline', title: 'Settings', sub: 'Codes, team, features, export', route: '/project/[id]/settings', testID: 'open-settings-menu' },
   ];
 

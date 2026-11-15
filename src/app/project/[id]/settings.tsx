@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Share, StyleSheet, Text, View } from 'react-native';
+import { Platform, Share, StyleSheet, Text, View } from 'react-native';
 
 import { useApp } from '@/components/AppProvider';
 import { CompanySettings } from '@/components/settings/CompanySettings';
@@ -198,6 +198,24 @@ export default function Settings() {
             hint="Also lets them add buyer name, phone, booking date and notes."
             value={project.salesCanEdit}
             onChange={(v) => update({ salesCanEdit: v }, v ? 'Sales team can now mark plots' : 'Sales team can only view now')}
+          />
+        </Card>
+      ) : null}
+
+      {features(project).notifications && backend.kind === 'firebase' ? (
+        <Card>
+          <H>Notifications</H>
+          <Toggle
+            label="Notify this phone about bookings"
+            hint={
+              Platform.OS === 'web'
+                ? 'Notifications work in the phone app, not in the browser.'
+                : membership?.pushToken
+                  ? 'Plot booked / sold, and approval requests for admins.'
+                  : 'Not set up yet on this phone: allow notifications, and see SETUP.md (push notifications need the app built with EAS).'
+            }
+            value={membership?.notify !== false}
+            onChange={(v) => backend.setMyNotifications(id, { notify: v }).then(() => toast(v ? 'Notifications on' : 'Notifications off'))}
           />
         </Card>
       ) : null}

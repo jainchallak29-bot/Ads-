@@ -2,6 +2,7 @@ import type { PublicDoc } from '../publicLayout';
 import type {
   Activity,
   Broker,
+  Lead,
   PlotAccount,
   PlotStatus,
   Bounds,
@@ -98,6 +99,14 @@ export interface Backend {
   /** any member who may change statuses: keep Available / Not available up to date */
   updatePublicStatus(token: string, st: PublicDoc['st']): Promise<void>;
   unpublishPublic(token: string): Promise<void>;
+
+  /** Leads & site visits */
+  watchLeads(pid: string, cb: (l: Lead[]) => void, err?: ErrCb): Unsub;
+  saveLead(pid: string, lead: Lead): Promise<void>;
+  deleteLead(pid: string, id: string): Promise<void>;
+
+  /** this phone's notification settings for a project */
+  setMyNotifications(pid: string, v: { pushToken?: string; notify?: boolean }): Promise<void>;
   replaceLayout(pid: string, data: LayoutReplace, who: Who): Promise<void>;
   regenerateCode(pid: string, role: Role): Promise<ProjectCodes>;
   removeMember(pid: string, uid: string): Promise<void>;

@@ -152,6 +152,39 @@ export interface Company {
   logo?: string;
 }
 
+export type LeadStage = 'new' | 'contacted' | 'visit' | 'negotiation' | 'won' | 'lost';
+export type LeadSource = 'walkin' | 'call' | 'broker' | 'online' | 'reference' | 'other';
+
+export interface SiteVisit {
+  id: string;
+  /** YYYY-MM-DD */
+  date: string;
+  note?: string;
+  byName: string;
+}
+
+/** An enquiry from a possible buyer. */
+export interface Lead {
+  id: string;
+  name: string;
+  phone: string;
+  budget?: number | null;
+  source: LeadSource;
+  /** plot numbers the person liked */
+  interested: string[];
+  stage: LeadStage;
+  /** YYYY-MM-DD */
+  nextFollowUp?: string;
+  visits: SiteVisit[];
+  notes?: string;
+  assignedName?: string;
+  wonPlotId?: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type Role = 'admin' | 'sales';
 
 export type DrawingUnit = 'mm' | 'cm' | 'm' | 'in' | 'ft';
@@ -258,6 +291,10 @@ export interface Member {
   name: string;
   code?: string;
   joinedAt: number;
+  /** Expo push token of this member's phone (notifications feature) */
+  pushToken?: string;
+  /** receive booking notifications (default on) */
+  notify?: boolean;
 }
 
 export interface Activity {

@@ -36,7 +36,7 @@ import { getRandomBytes } from 'expo-crypto';
 import { generateCode, normalizeCode } from '../codes';
 import type { PublicDoc } from '../publicLayout';
 import { saleFields } from '../status';
-import type { Activity, Broker, LayoutData, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
+import type { Activity, Broker, LayoutData, Lead, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
 import { emulatorHost, firebaseConfig } from './config';
 import { makeAuth } from './makeAuth';
 import { docToPlot, plotToDoc } from './serialize';
@@ -536,6 +536,37 @@ export class FirebaseBackend implements Backend {
     await soft(q.commit());
   }
 
+  watchLeads(pid: string, cb: (l: Lead[]) => void, err?: ErrCb): Unsub {
+    return onSnapshot(
+      collection(this.db, 'projects', pid, 'leads'),
+      (s) =>
+        cb(
+          s.docs.map((d) => {
+            const v = d.data() as Partial<Lead>;
+            return { ...v, visits: v.visits ?? [], interested: v.interested ?? [], id: d.id } as Lead;
+          }),
+        ),
+      (e) => err?.(friendly(e)),
+    );
+  }
+
+  async saveLead(pid: string, lead: Lead) {
+    const { id, ...rest } = lead;
+    await soft(setDoc(this.sub(pid, 'leads', id), { ...rest, updatedAt: Date.now() }));
+  }
+
+  async deleteLead(pid: string, id: string) {
+    await soft(writeBatch(this.db).delete(this.sub(pid, 'leads', id)).commit());
+  }
+
+  async setMyNotifications(pid: string, v: { pushToken?: string; notify?: boolean }) {
+    const uid = await this.ready();
+    const patch: Record<string, unknown> = {};
+    if (v.pushToken !== undefined) patch.pushToken = v.pushToken;
+    if (v.notify !== undefined) patch.notify = v.notify;
+    await soft(writeBatch(this.db).update(this.sub(pid, 'members', uid), patch).commit());
+  }
+
   async regenerateCode(pid: string, role: Role): Promise<ProjectCodes> {
     const current = await this.getCodes(pid);
     for (let attempt = 0; ; attempt++) {
@@ -577,7 +608,7 @@ export class FirebaseBackend implements Backend {
     const uid = await this.ready();
     try {
       const q = new BatchQueue(this.db);
-      for (const name of ['plots', 'layout', 'activity', 'private', 'accounts', 'brokers']) {
+      for (const name of ['plots', 'layout', 'activity', 'private', 'accounts', 'brokers', 'leads']) {
         const s = await getDocs(collection(this.db, 'projects', pid, name));
         s.docs.forEach((d) => q.delete(d.ref));
       }

@@ -7,7 +7,7 @@ import { getRandomBytes } from 'expo-crypto';
 import { generateCode, normalizeCode } from '../codes';
 import type { PublicDoc } from '../publicLayout';
 import { saleFields } from '../status';
-import type { Activity, Broker, LayoutData, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
+import type { Activity, Broker, LayoutData, Lead, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
 import { UserError, type Backend, type BulkItem, type ErrCb, type LayoutReplace, type ProjectPatch, type ShapeEdit, type Unsub, type Who } from './types';
 
 const KEY = (pid: string) => `local-project:${pid}`;
@@ -24,6 +24,7 @@ interface Stored {
   accounts?: Record<string, PlotAccount>;
   brokers?: Broker[];
   receiptNo?: number;
+  leads?: Lead[];
 }
 
 type Listener = () => void;
@@ -309,6 +310,28 @@ export class LocalBackend implements Backend {
   }
   async unpublishPublic(token: string) {
     await this.pubSave(token, null);
+  }
+
+  watchLeads(pid: string, cb: (l: Lead[]) => void): Unsub {
+    return this.watch(pid, (s) => s?.leads ?? [], cb);
+  }
+
+  async saveLead(pid: string, lead: Lead) {
+    await this.mutate(pid, (s) => {
+      s.leads = [...(s.leads || []).filter((x) => x.id !== lead.id), { ...lead, updatedAt: Date.now() }];
+    });
+  }
+
+  async deleteLead(pid: string, id: string) {
+    await this.mutate(pid, (s) => {
+      s.leads = (s.leads || []).filter((x) => x.id !== id);
+    });
+  }
+
+  async setMyNotifications(pid: string, v: { pushToken?: string; notify?: boolean }) {
+    await this.mutate(pid, (s) => {
+      s.members = s.members.map((m) => (m.uid === LOCAL_UID ? { ...m, ...v } : m));
+    });
   }
 
   async regenerateCode(pid: string, role: Role) {

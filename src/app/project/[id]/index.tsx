@@ -13,6 +13,7 @@ import { ShareSheet } from '@/components/ShareSheet';
 import { Banner, Button, H, IconButton, Loading, Muted, PromptModal, Row, confirm } from '@/components/ui';
 import { useProject } from '@/hooks/useProject';
 import { usePublicSync } from '@/hooks/usePublicSync';
+import { useTeamNotify } from '@/hooks/useTeamNotify';
 import { boundsOf, dist, pointInPolygon, polygonArea } from '@/lib/geometry';
 import { deleteCorner, insertCorner, isSimplePolygon, mergePlots, moveCorner, snapPoint, splitNames, splitPlot } from '@/lib/shapes';
 import { comparePlotNumbers } from '@/lib/cad/detect';
@@ -53,6 +54,7 @@ export default function ProjectMap() {
   const selected = plots.find((p) => p.id === selectedId) ?? null;
   const [shareWhat, setShareWhat] = useState<null | 'layout' | 'plot'>(null);
   usePublicSync(project, plots, layout, isAdmin, canEditStatus);
+  const notify = useTeamNotify(project, data.membership);
 
   // keep the list of projects on this phone up to date (name/role)
   useEffect(() => {
@@ -236,10 +238,16 @@ export default function ProjectMap() {
     if (!selected || s === selected.status) return;
     if (needsApproval) {
       if (selected.pending && selected.pending.by !== uid) return toast(`${selected.pending.byName} already asked to change this plot.`);
-      run(() => backend.requestStatus(id, selected, s, who), `Request sent: plot ${selected.number} → ${statusLabel(project, s)}`);
+      run(async () => {
+        await backend.requestStatus(id, selected, s, who);
+        notify('admins', `Approval needed · Plot ${selected.number}`, `${userName} asks: ${statusLabel(project, s)} (${project!.name})`);
+      }, `Request sent: plot ${selected.number} → ${statusLabel(project, s)}`);
       return;
     }
-    run(() => backend.updatePlot(id, selected, { status: s }, who), `Plot ${selected.number} marked ${statusLabel(project, s)}`);
+    run(async () => {
+      await backend.updatePlot(id, selected, { status: s }, who);
+      notify('all', `Plot ${selected.number} → ${statusLabel(project, s)}`, `by ${userName} · ${project!.name}`);
+    }, `Plot ${selected.number} marked ${statusLabel(project, s)}`);
   };
 
   const doSearch = () => {
@@ -348,7 +356,11 @@ export default function ProjectMap() {
                 .map((p) => ({ before: p, patch: fn(p) }))
                 .filter((x): x is { before: Plot; patch: PlotPatch } => !!x.patch);
               if (!items.length) return toast('Nothing to change');
-              run(() => backend.bulkUpdatePlots(id, items, who), label);
+              run(async () => {
+                await backend.bulkUpdatePlots(id, items, who);
+                const changed = items.filter((x) => x.patch.status && x.patch.status !== x.before.status);
+                if (changed.length) notify('all', `${changed.length} plots → ${statusLabel(project, changed[0].patch.status!)}`, `by ${userName} · ${project.name}`);
+              }, label);
             }}
             onSelectAll={() => setMultiIds(plots.filter(matches).map((p) => p.id))}
             onClear={() => setMultiIds([])}
@@ -440,7 +452,14 @@ export default function ProjectMap() {
             onClose={() => setSelectedId(null)}
             isAdmin={isAdmin}
             uid={uid}
-            onDecide={(ok) => run(() => backend.decideRequest(id, selected, ok, who), ok ? 'Approved' : 'Rejected')}
+            onDecide={(ok) =>
+              run(async () => {
+                const req = selected.pending;
+                await backend.decideRequest(id, selected, ok, who);
+                if (req) notify({ uid: req.by }, `Plot ${selected.number} ${ok ? 'approved' : 'rejected'}`, `${statusLabel(project, req.status)} · ${project.name}`);
+                if (req && ok) notify('all', `Plot ${selected.number} → ${statusLabel(project, req.status)}`, `approved by ${userName} · ${project.name}`);
+              }, ok ? 'Approved' : 'Rejected')
+            }
             onCancelRequest={() => run(() => backend.cancelRequest(id, selected, who), 'Request cancelled')}
             onShare={() => setShareWhat('plot')}
           />

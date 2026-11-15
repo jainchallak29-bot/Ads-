@@ -1,11 +1,22 @@
+import { router } from 'expo-router';
 import { Stack } from 'expo-router/stack';
+import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppProvider } from '@/components/AppProvider';
+import { onNotificationOpen } from '@/lib/notify';
 import { C } from '@/theme';
 
 export default function RootLayout() {
+  // tapping a team notification opens its project
+  useEffect(
+    () =>
+      onNotificationOpen((data) => {
+        if (typeof data.projectId === 'string') router.push({ pathname: '/project/[id]', params: { id: data.projectId } });
+      }),
+    [],
+  );
   return (
     <SafeAreaProvider>
       <AppProvider>
@@ -33,6 +44,9 @@ export default function RootLayout() {
           <Stack.Screen name="project/[id]/collections" options={{ title: 'Collections' }} />
           <Stack.Screen name="project/[id]/brokers" options={{ title: 'Brokers & commission' }} />
           <Stack.Screen name="project/[id]/accounts/[plotId]" options={{ title: 'Payments' }} />
+ <Stack.Screen name="project/[id]/leads/index" options={{ title: 'Leads & site visits' }} />
+          <Stack.Screen name="project/[id]/leads/[leadId]" options={{ title: 'Lead' }} />
+          <Stack.Screen name="project/[id]/activity" options={{ title: 'Activity' }} />
           <Stack.Screen name="share/[token]" options={{ title: 'Layout', headerBackVisible: false }} />
         </Stack>
       </AppProvider>

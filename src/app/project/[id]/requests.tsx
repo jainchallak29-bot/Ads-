@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useApp } from '@/components/AppProvider';
 import { Badge, Button, Card, Loading, Muted, Row, Screen } from '@/components/ui';
 import { useProject } from '@/hooks/useProject';
+import { useTeamNotify } from '@/hooks/useTeamNotify';
 import { STATUS_COLOR, statusLabel } from '@/lib/status';
 import { C } from '@/theme';
 
@@ -11,15 +12,20 @@ import { C } from '@/theme';
 export default function Requests() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { backend, userName, toast } = useApp();
-  const { project, plots, loading, isAdmin } = useProject(id);
+  const { project, plots, loading, isAdmin, membership } = useProject(id);
+  const notify = useTeamNotify(project, membership);
   if (loading || !project) return <Loading />;
   const pending = plots.filter((p) => p.pending).sort((a, b) => (a.pending!.at || 0) - (b.pending!.at || 0));
 
   const decide = (pid: string, ok: boolean) => {
     const plot = plots.find((p) => p.id === pid);
     if (!plot) return;
+    const req = plot.pending;
     backend.decideRequest(id, plot, ok, { name: userName }).then(
-      () => toast(ok ? `Plot ${plot.number} approved` : `Plot ${plot.number} rejected`),
+      () => {
+        toast(ok ? `Plot ${plot.number} approved` : `Plot ${plot.number} rejected`);
+        if (req && project) notify({ uid: req.by }, `Plot ${plot.number} ${ok ? 'approved' : 'rejected'}`, `${statusLabel(project, req.status)} · ${project.name}`);
+      },
       (e: Error) => toast(e.message),
     );
   };

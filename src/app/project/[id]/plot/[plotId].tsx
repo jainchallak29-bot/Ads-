@@ -10,6 +10,7 @@ import { StatusPicker } from '@/components/StatusPicker';
 import { Banner, Button, Card, Field, H, InfoRow, Loading, Muted, Row, Screen, Segmented, Toggle } from '@/components/ui';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useProject } from '@/hooks/useProject';
+import { useTeamNotify } from '@/hooks/useTeamNotify';
 import { accountStatus, commissionAmount, commissionPaid } from '@/lib/finance';
 import { comparePlotNumbers } from '@/lib/cad/detect';
 import { premiumText, priceBreakdown } from '@/lib/pricing';
@@ -46,7 +47,8 @@ interface Form {
 export default function PlotDetails() {
   const { id, plotId } = useLocalSearchParams<{ id: string; plotId: string }>();
   const { backend, userName, toast, uid } = useApp();
-  const { project, plots, loading, isAdmin, canEditStatus } = useProject(id);
+  const { project, plots, loading, isAdmin, canEditStatus, membership } = useProject(id);
+  const notify = useTeamNotify(project, membership);
   const plot = plots.find((p) => p.id === plotId);
   const { accounts, brokers } = useAccounts(id, isAdmin);
   // null until the user edits: until then the form follows the live plot data
@@ -141,11 +143,13 @@ export default function PlotDetails() {
         if (plot.pending && plot.pending.by !== uid) throw new Error(`${plot.pending.byName} already asked to change this plot.`);
         if (Object.keys(rest).length) await backend.updatePlot(id, plot, rest, { name: userName });
         await backend.requestStatus(id, plot, status, { name: userName });
+        notify('admins', `Approval needed · Plot ${plot.number}`, `${userName} asks: ${statusLabel(project, status)} (${project.name})`);
         toast('Saved. Status change sent to the admin for approval');
         router.back();
         return;
       }
       await backend.updatePlot(id, plot, patch, { name: userName });
+      if (patch.status) notify('all', `Plot ${plot.number} → ${statusLabel(project, patch.status)}`, `by ${userName} · ${project.name}`);
       toast('Saved — updated on all phones');
       router.back();
     } catch (e) {

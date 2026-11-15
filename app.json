@@ -46,6 +46,12 @@
           "photosPermission": "Choose photos and your company logo for plots and receipts.",
           "cameraPermission": "Take photos of plots on site."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#1F6FEB"
+        }
       ]
     ],
     "experiments": {
