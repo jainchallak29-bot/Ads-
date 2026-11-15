@@ -1,0 +1,101 @@
+rules_version = '2';
+
+// Security rules for the Plot Inventory app.
+// Every phone signs in anonymously. A phone gets access to a project only by
+// entering one of the project's codes:
+//   - Admin code → can do everything (edit plots & shapes, see codes, remove members)
+//   - Sales code → can view; can mark plots booked/sold only if the admin allows it
+// Deploy with:  firebase deploy --only firestore:rules   (or paste into the Firebase console)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function projectPath(pid) { return /databases/$(database)/documents/projects/$(pid); }
+    function memberPath(pid) { return /databases/$(database)/documents/projects/$(pid)/members/$(request.auth.uid); }
+    function codePath(code) { return /databases/$(database)/documents/joinCodes/$(code); }
+
+    function isMember(pid) { return signedIn() && exists(memberPath(pid)); }
+    function role(pid) { return get(memberPath(pid)).data.role; }
+    function isAdmin(pid) { return isMember(pid) && role(pid) == 'admin'; }
+    function isSales(pid) { return isMember(pid) && role(pid) == 'sales'; }
+    function salesMayEdit(pid) { return isSales(pid) && get(projectPath(pid)).data.salesCanEdit == true; }
+    function canEditStatus(pid) { return isAdmin(pid) || salesMayEdit(pid); }
+
+    // A code is valid for a project/role if the joinCodes document says so
+    // (getAfter: also works in the same batch that creates the project).
+    function validCode(pid, code, r) {
+      return code is string
+        && getAfter(codePath(code)).data.projectId == pid
+        && getAfter(codePath(code)).data.role == r;
+    }
+
+    // ---- join codes: can be looked up by someone who knows the code, never listed
+    match /joinCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['projectId', 'role', 'createdAt'])
+        && request.resource.data.role in ['admin', 'sales']
+        && (
+          // an existing admin adds a new code
+          isAdmin(request.resource.data.projectId)
+          // or the project is being created in this same batch by me
+          || (!exists(projectPath(request.resource.data.projectId))
+              && getAfter(projectPath(request.resource.data.projectId)).data.ownerUid == request.auth.uid)
+        );
+      allow update: if false;
+      allow delete: if isAdmin(resource.data.projectId);
+    }
+
+    match /projects/{pid} {
+      allow get: if isMember(pid);
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.salesCanEdit is bool;
+      allow update: if isAdmin(pid)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAdmin(pid);
+
+      match /members/{uid} {
+        allow read: if isMember(pid);
+        // join / re-join with a valid code; the role must match the code
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['role', 'name', 'code', 'joinedAt'])
+          && request.resource.data.name is string && request.resource.data.name.size() <= 60
+          && validCode(pid, request.resource.data.code, request.resource.data.role);
+        // admins remove people; anyone can leave
+        allow delete: if isAdmin(pid) || (signedIn() && request.auth.uid == uid);
+      }
+
+      match /private/{docId} {
+        allow read, write: if isAdmin(pid);
+      }
+
+      match /plots/{plotId} {
+        allow read: if isMember(pid);
+        allow create, delete: if isAdmin(pid);
+        allow update: if isAdmin(pid)
+          || (salesMayEdit(pid)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['status', 'buyerName', 'buyerPhone', 'bookingDate', 'notes', 'updatedAt', 'updatedBy', 'updatedByName'])
+              && request.resource.data.status in ['available', 'booked', 'sold']
+              && request.resource.data.updatedBy == request.auth.uid);
+      }
+
+      match /layout/{chunk} {
+        allow read: if isMember(pid);
+        allow write: if isAdmin(pid);
+      }
+
+      match /activity/{id} {
+        allow read: if isMember(pid);
+        allow create: if canEditStatus(pid) && request.resource.data.by == request.auth.uid;
+        allow update: if false;
+        allow delete: if isAdmin(pid);
+      }
+    }
+  }
+}
