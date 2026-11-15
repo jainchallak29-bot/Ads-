@@ -40,8 +40,9 @@ export async function shareTextFile(name: string, content: string, mimeType: str
   await Sharing.shareAsync(f.uri, { mimeType, dialogTitle: name });
 }
 
-export async function sharePdf(name: string, html: string) {
-  const { uri } = await Print.printToFileAsync({ html, width: 842, height: 595 });
+export async function sharePdf(name: string, html: string, orientation: 'landscape' | 'portrait' = 'landscape') {
+  const size = orientation === 'landscape' ? { width: 842, height: 595 } : { width: 595, height: 842 };
+  const { uri } = await Print.printToFileAsync({ html, ...size });
   const dest = new File(Paths.cache, name);
   if (dest.exists) dest.delete();
   await new File(uri).copy(dest);

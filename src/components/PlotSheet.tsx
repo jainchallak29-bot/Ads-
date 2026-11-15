@@ -16,6 +16,10 @@ export function PlotSheet({
   onStatus,
   onClose,
   excludeStatuses = [],
+  isAdmin = false,
+  uid,
+  onDecide,
+  onCancelRequest,
 }: {
   plot: Plot;
   project: Project;
@@ -23,6 +27,10 @@ export function PlotSheet({
   onStatus: (s: PlotStatus) => void;
   onClose: () => void;
   excludeStatuses?: PlotStatus[];
+  isAdmin?: boolean;
+  uid?: string | null;
+  onDecide?: (approve: boolean) => void;
+  onCancelRequest?: () => void;
 }) {
   const price = plotPrice(plot, project);
   const premiums = applicablePremiums(plot, project);
@@ -38,6 +46,21 @@ export function PlotSheet({
         <Badge text={statusLabel(project, plot.status)} color={STATUS_COLOR[plot.status]} />
         <IconButton icon="close" label="Close" onPress={onClose} />
       </View>
+      {plot.pending ? (
+        <View style={styles.pending} testID="pending-box">
+          <Text style={styles.pendingText}>
+            ⏳ Waiting for approval: {statusLabel(project, plot.pending.status)} (asked by {plot.pending.byName})
+          </Text>
+          {isAdmin && onDecide ? (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <Button small title="Approve" icon="checkmark" onPress={() => onDecide(true)} testID="approve" />
+              <Button small variant="secondary" title="Reject" icon="close" onPress={() => onDecide(false)} testID="reject" />
+            </View>
+          ) : plot.pending.by === uid && onCancelRequest ? (
+            <Button small variant="ghost" title="Cancel my request" onPress={onCancelRequest} style={{ alignSelf: 'flex-start', marginTop: 4 }} />
+          ) : null}
+        </View>
+      ) : null}
       {canEditStatus ? <StatusPicker project={project} value={plot.status} onChange={onStatus} exclude={excludeStatuses} /> : null}
       <InfoRow label="Area" value={fmtArea(plot, project)} />
       <InfoRow label="Size" value={fmtDimensions(plot, project)} />
@@ -88,4 +111,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 11, fontWeight: '700', color: C.muted, letterSpacing: 1 },
   number: { fontSize: 28, fontWeight: '800', color: C.text, marginTop: -2 },
   updated: { fontSize: 12, color: C.muted, marginTop: 8 },
+  pending: { backgroundColor: '#FFF4E5', borderRadius: 10, padding: 10, marginBottom: 10 },
+  pendingText: { color: '#9A5B00', fontSize: 14, fontWeight: '600' },
 });

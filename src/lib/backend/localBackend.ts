@@ -5,7 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getRandomBytes } from 'expo-crypto';
 
 import { generateCode, normalizeCode } from '../codes';
-import type { Activity, LayoutData, Member, NewProjectInput, Plot, PlotPatch, Project, ProjectCodes, Role } from '../types';
+import { saleFields } from '../status';
+import type { Activity, Broker, LayoutData, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
 import { UserError, type Backend, type BulkItem, type ErrCb, type LayoutReplace, type ProjectPatch, type ShapeEdit, type Unsub, type Who } from './types';
 
 const KEY = (pid: string) => `local-project:${pid}`;
@@ -19,6 +20,9 @@ interface Stored {
   members: Member[];
   codes: ProjectCodes;
   activity: Activity[];
+  accounts?: Record<string, PlotAccount>;
+  brokers?: Broker[];
+  receiptNo?: number;
 }
 
 type Listener = () => void;
@@ -148,7 +152,7 @@ export class LocalBackend implements Backend {
     await this.mutate(pid, (s) => {
       const cur = s.plots[before.id];
       if (!cur) throw new UserError('This plot no longer exists.');
-      s.plots[before.id] = { ...cur, ...patch, updatedAt: Date.now(), updatedBy: LOCAL_UID, updatedByName: who.name };
+      s.plots[before.id] = { ...cur, ...patch, ...saleFields(cur, patch.status, who.name, patch.bookingDate), updatedAt: Date.now(), updatedBy: LOCAL_UID, updatedByName: who.name };
       if (patch.status && patch.status !== before.status) {
         this.log(s, { plotId: before.id, plotNumber: before.number, action: 'status', from: before.status, to: patch.status, byName: who.name });
       } else if (patch.number && patch.number !== before.number) {
@@ -162,7 +166,7 @@ export class LocalBackend implements Backend {
       for (const { before, patch } of items) {
         const cur = s.plots[before.id];
         if (!cur) continue;
-        s.plots[before.id] = { ...cur, ...patch, updatedAt: Date.now(), updatedBy: LOCAL_UID, updatedByName: who.name };
+        s.plots[before.id] = { ...cur, ...patch, ...saleFields(cur, patch.status, who.name, patch.bookingDate), updatedAt: Date.now(), updatedBy: LOCAL_UID, updatedByName: who.name };
         if (patch.status && patch.status !== before.status) {
           this.log(s, { plotId: before.id, plotNumber: before.number, action: 'status', from: before.status, to: patch.status, byName: who.name });
         }
@@ -190,6 +194,77 @@ export class LocalBackend implements Backend {
       s.project.layoutVersion++;
       this.log(s, { plotId: '', plotNumber: '', action: 'layout', to: `New drawing imported (${data.upserts.length} plots)`, byName: who.name });
     });
+  }
+
+  async requestStatus(pid: string, plot: Plot, status: PlotStatus, who: Who) {
+    await this.mutate(pid, (s) => {
+      const cur = s.plots[plot.id];
+      if (!cur) throw new UserError('This plot no longer exists.');
+      cur.pending = { status, by: LOCAL_UID, byName: who.name, at: Date.now() };
+      this.log(s, { plotId: plot.id, plotNumber: plot.number, action: 'request', from: plot.status, to: status, byName: who.name });
+    });
+  }
+
+  async cancelRequest(pid: string, plot: Plot) {
+    await this.mutate(pid, (s) => {
+      if (s.plots[plot.id]) s.plots[plot.id].pending = null;
+    });
+  }
+
+  async decideRequest(pid: string, plot: Plot, approve: boolean, who: Who) {
+    await this.mutate(pid, (s) => {
+      const cur = s.plots[plot.id];
+      const req = cur?.pending;
+      if (!cur || !req) return;
+      if (approve) Object.assign(cur, { status: req.status, ...saleFields(cur, req.status, req.byName) });
+      cur.pending = null;
+      cur.updatedAt = Date.now();
+      cur.updatedByName = who.name;
+      this.log(s, {
+        plotId: plot.id,
+        plotNumber: plot.number,
+        action: approve ? 'status' : 'rejected',
+        from: plot.status,
+        to: req.status,
+        note: `${approve ? 'Approved' : 'Rejected'} request from ${req.byName}`,
+        byName: who.name,
+      });
+    });
+  }
+
+  watchAccounts(pid: string, cb: (a: Record<string, PlotAccount>) => void): Unsub {
+    return this.watch(pid, (s) => s?.accounts ?? {}, cb);
+  }
+
+  async saveAccount(pid: string, acc: PlotAccount, who: Who) {
+    await this.mutate(pid, (s) => {
+      s.accounts = { ...(s.accounts || {}), [acc.plotId]: { ...acc, updatedAt: Date.now(), updatedByName: who.name } };
+    });
+  }
+
+  watchBrokers(pid: string, cb: (b: Broker[]) => void): Unsub {
+    return this.watch(pid, (s) => [...(s?.brokers ?? [])].sort((a, b) => a.name.localeCompare(b.name)), cb);
+  }
+
+  async saveBroker(pid: string, b: Broker) {
+    await this.mutate(pid, (s) => {
+      s.brokers = [...(s.brokers || []).filter((x) => x.id !== b.id), b];
+    });
+  }
+
+  async deleteBroker(pid: string, id: string) {
+    await this.mutate(pid, (s) => {
+      s.brokers = (s.brokers || []).filter((x) => x.id !== id);
+    });
+  }
+
+  async nextReceiptNo(pid: string) {
+    let n = 0;
+    await this.mutate(pid, (s) => {
+      s.receiptNo = (s.receiptNo || 0) + 1;
+      n = s.receiptNo;
+    });
+    return n;
   }
 
   async regenerateCode(pid: string, role: Role) {

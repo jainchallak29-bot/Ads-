@@ -166,7 +166,7 @@ export function Toggle({ label, value, onChange, hint, disabled }: { label: stri
         <Text style={styles.toggleLabel}>{label}</Text>
         {hint ? <Text style={styles.hint}>{hint}</Text> : null}
       </View>
-      <Switch value={value} onValueChange={onChange} disabled={disabled} trackColor={{ true: C.primary, false: '#D0D5DD' }} />
+      <Switch value={value} onValueChange={onChange} disabled={disabled} trackColor={{ true: C.primary, false: '#D0D5DD' }} accessibilityLabel={label} />
     </View>
   );
 }

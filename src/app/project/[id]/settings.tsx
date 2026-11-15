@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Share, StyleSheet, Text, View } from 'react-native';
 
 import { useApp } from '@/components/AppProvider';
+import { CompanySettings } from '@/components/settings/CompanySettings';
 import { FeatureSettings } from '@/components/settings/FeatureSettings';
 import { StageSettings } from '@/components/settings/StageSettings';
 import { Badge, Banner, Button, Card, Field, H, IconButton, Loading, Muted, Row, Screen, Segmented, Toggle, confirm } from '@/components/ui';
@@ -243,6 +244,7 @@ export default function Settings() {
 
       {isAdmin ? <FeatureSettings project={project} /> : null}
       {isAdmin ? <StageSettings project={project} /> : null}
+      {isAdmin ? <CompanySettings project={project} /> : null}
 
       {features(project).pricing ? (
         <Card>

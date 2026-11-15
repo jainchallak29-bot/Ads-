@@ -1,5 +1,8 @@
 import type {
   Activity,
+  Broker,
+  PlotAccount,
+  PlotStatus,
   Bounds,
   DrawingUnit,
   LayoutData,
@@ -20,7 +23,7 @@ export interface Who {
 }
 
 export type ProjectPatch = Partial<
-  Pick<Project, 'name' | 'location' | 'drawingUnit' | 'areaUnit' | 'lengthUnit' | 'currency' | 'salesCanEdit' | 'statuses' | 'features' | 'pricing'>
+  Pick<Project, 'name' | 'location' | 'drawingUnit' | 'areaUnit' | 'lengthUnit' | 'currency' | 'salesCanEdit' | 'statuses' | 'features' | 'pricing' | 'company'>
 >;
 
 export interface BulkItem {
@@ -71,6 +74,20 @@ export interface Backend {
   /** Same change for many plots at once (admin). */
   bulkUpdatePlots(pid: string, items: BulkItem[], who: Who): Promise<void>;
   applyShapeEdit(pid: string, edit: ShapeEdit, who: Who): Promise<void>;
+
+  /** Approval feature: Sales ask for a status change; an Admin approves or rejects. */
+  requestStatus(pid: string, plot: Plot, status: PlotStatus, who: Who): Promise<void>;
+  cancelRequest(pid: string, plot: Plot, who: Who): Promise<void>;
+  decideRequest(pid: string, plot: Plot, approve: boolean, who: Who): Promise<void>;
+
+  /** Admin-only money data */
+  watchAccounts(pid: string, cb: (a: Record<string, PlotAccount>) => void, err?: ErrCb): Unsub;
+  saveAccount(pid: string, acc: PlotAccount, who: Who): Promise<void>;
+  watchBrokers(pid: string, cb: (b: Broker[]) => void, err?: ErrCb): Unsub;
+  saveBroker(pid: string, b: Broker): Promise<void>;
+  deleteBroker(pid: string, id: string): Promise<void>;
+  /** next receipt number for the project (1, 2, 3 …) */
+  nextReceiptNo(pid: string): Promise<number>;
   replaceLayout(pid: string, data: LayoutReplace, who: Who): Promise<void>;
   regenerateCode(pid: string, role: Role): Promise<ProjectCodes>;
   removeMember(pid: string, uid: string): Promise<void>;

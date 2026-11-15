@@ -39,7 +39,14 @@
           "imageWidth": 76
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose photos and your company logo for plots and receipts.",
+          "cameraPermission": "Take photos of plots on site."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

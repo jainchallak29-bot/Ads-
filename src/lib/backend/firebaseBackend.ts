@@ -23,6 +23,8 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
+  setDoc,
   where,
   writeBatch,
   type DocumentReference,
@@ -32,7 +34,8 @@ import {
 import { getRandomBytes } from 'expo-crypto';
 
 import { generateCode, normalizeCode } from '../codes';
-import type { Activity, LayoutData, Member, NewProjectInput, Plot, PlotPatch, Project, ProjectCodes, Role } from '../types';
+import { saleFields } from '../status';
+import type { Activity, Broker, LayoutData, Member, NewProjectInput, Plot, PlotAccount, PlotPatch, PlotStatus, Project, ProjectCodes, Role } from '../types';
 import { emulatorHost, firebaseConfig } from './config';
 import { makeAuth } from './makeAuth';
 import { docToPlot, plotToDoc } from './serialize';
@@ -324,7 +327,7 @@ export class FirebaseBackend implements Backend {
   async updatePlot(pid: string, before: Plot, patch: PlotPatch, who: Who) {
     const uid = await this.ready();
     const b = writeBatch(this.db);
-    b.update(this.sub(pid, 'plots', before.id), plotToDoc({ ...patch, updatedAt: Date.now(), updatedBy: uid, updatedByName: who.name }));
+    b.update(this.sub(pid, 'plots', before.id), plotToDoc({ ...patch, ...saleFields(before, patch.status, who.name, patch.bookingDate), updatedAt: Date.now(), updatedBy: uid, updatedByName: who.name }));
     if (patch.status && patch.status !== before.status) {
       b.set(...this.activity(pid, { plotId: before.id, plotNumber: before.number, action: 'status', from: before.status, to: patch.status, byName: who.name }));
     } else if (patch.number && patch.number !== before.number) {
@@ -338,7 +341,7 @@ export class FirebaseBackend implements Backend {
     const now = Date.now();
     const q = new BatchQueue(this.db);
     for (const { before, patch } of items) {
-      q.update(this.sub(pid, 'plots', before.id), plotToDoc({ ...patch, updatedAt: now, updatedBy: uid, updatedByName: who.name }));
+      q.update(this.sub(pid, 'plots', before.id), plotToDoc({ ...patch, ...saleFields(before, patch.status, who.name, patch.bookingDate), updatedAt: now, updatedBy: uid, updatedByName: who.name }));
       if (patch.status && patch.status !== before.status) {
         q.set(...this.activity(pid, { plotId: before.id, plotNumber: before.number, action: 'status', from: before.status, to: patch.status, byName: who.name }));
       }
@@ -386,6 +389,92 @@ export class FirebaseBackend implements Backend {
     }
   }
 
+  async requestStatus(pid: string, plot: Plot, status: PlotStatus, who: Who) {
+    const uid = await this.ready();
+    const now = Date.now();
+    const b = writeBatch(this.db);
+    b.update(this.sub(pid, 'plots', plot.id), { pending: { status, by: uid, byName: who.name, at: now }, updatedAt: now, updatedBy: uid, updatedByName: who.name });
+    b.set(...this.activity(pid, { plotId: plot.id, plotNumber: plot.number, action: 'request', from: plot.status, to: status, byName: who.name }));
+    await soft(b.commit());
+  }
+
+  async cancelRequest(pid: string, plot: Plot, who: Who) {
+    const uid = await this.ready();
+    await soft(
+      writeBatch(this.db)
+        .update(this.sub(pid, 'plots', plot.id), { pending: null, updatedAt: Date.now(), updatedBy: uid, updatedByName: who.name })
+        .commit(),
+    );
+  }
+
+  async decideRequest(pid: string, plot: Plot, approve: boolean, who: Who) {
+    const uid = await this.ready();
+    const req = plot.pending;
+    if (!req) return;
+    const now = Date.now();
+    const b = writeBatch(this.db);
+    const patch: Record<string, unknown> = { pending: null, updatedAt: now, updatedBy: uid, updatedByName: who.name };
+    if (approve) Object.assign(patch, { status: req.status, ...saleFields(plot, req.status, req.byName) });
+    b.update(this.sub(pid, 'plots', plot.id), patch);
+    b.set(
+      ...this.activity(pid, {
+        plotId: plot.id,
+        plotNumber: plot.number,
+        action: approve ? 'status' : 'rejected',
+        from: plot.status,
+        to: req.status,
+        note: `${approve ? 'Approved' : 'Rejected'} request from ${req.byName}`,
+        byName: who.name,
+      }),
+    );
+    await soft(b.commit());
+  }
+
+  watchAccounts(pid: string, cb: (a: Record<string, PlotAccount>) => void, err?: ErrCb): Unsub {
+    return onSnapshot(
+      collection(this.db, 'projects', pid, 'accounts'),
+      (s) => cb(Object.fromEntries(s.docs.map((d) => [d.id, { plotId: d.id, schedule: [], payments: [], commissionPayments: [], ...(d.data() as Partial<PlotAccount>) } as PlotAccount]))),
+      (e) => err?.(friendly(e)),
+    );
+  }
+
+  async saveAccount(pid: string, acc: PlotAccount, who: Who) {
+    await soft(setDoc(this.sub(pid, 'accounts', acc.plotId), { ...acc, updatedAt: Date.now(), updatedByName: who.name }));
+  }
+
+  watchBrokers(pid: string, cb: (b: Broker[]) => void, err?: ErrCb): Unsub {
+    return onSnapshot(
+      collection(this.db, 'projects', pid, 'brokers'),
+      (s) => cb(s.docs.map((d) => ({ ...(d.data() as Broker), id: d.id })).sort((a, b) => a.name.localeCompare(b.name))),
+      (e) => err?.(friendly(e)),
+    );
+  }
+
+  async saveBroker(pid: string, b: Broker) {
+    const { id, ...rest } = b;
+    await soft(setDoc(this.sub(pid, 'brokers', id), rest));
+  }
+
+  async deleteBroker(pid: string, id: string) {
+    await soft(writeBatch(this.db).delete(this.sub(pid, 'brokers', id)).commit());
+  }
+
+  async nextReceiptNo(pid: string): Promise<number> {
+    const ref = this.sub(pid, 'private', 'counters');
+    try {
+      return await runTransaction(this.db, async (t) => {
+        const cur = await t.get(ref);
+        const next = ((cur.data()?.receipt as number) || 0) + 1;
+        t.set(ref, { receipt: next }, { merge: true });
+        return next;
+      });
+    } catch (e) {
+      const code = String((e as { code?: string })?.code);
+      if (code.includes('unavailable') || code.includes('failed-precondition')) throw new UserError('A receipt number needs internet. Try again when online.');
+      throw friendly(e);
+    }
+  }
+
   async regenerateCode(pid: string, role: Role): Promise<ProjectCodes> {
     const current = await this.getCodes(pid);
     for (let attempt = 0; ; attempt++) {
@@ -427,7 +516,7 @@ export class FirebaseBackend implements Backend {
     const uid = await this.ready();
     try {
       const q = new BatchQueue(this.db);
-      for (const name of ['plots', 'layout', 'activity', 'private']) {
+      for (const name of ['plots', 'layout', 'activity', 'private', 'accounts', 'brokers']) {
         const s = await getDocs(collection(this.db, 'projects', pid, name));
         s.docs.forEach((d) => q.delete(d.ref));
       }

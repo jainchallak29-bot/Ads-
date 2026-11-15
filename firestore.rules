@@ -21,6 +21,8 @@ service cloud.firestore {
     function isSales(pid) { return isMember(pid) && role(pid) == 'sales'; }
     function salesMayEdit(pid) { return isSales(pid) && get(projectPath(pid)).data.salesCanEdit == true; }
     function canEditStatus(pid) { return isAdmin(pid) || salesMayEdit(pid); }
+    function approvalOn(pid) { return get(projectPath(pid)).data.get('features', {}).get('approval', false) == true; }
+    function saleStage(s) { return s in ['available', 'token', 'booked', 'agreement', 'sold']; }
 
     // A code is valid for a project/role if the joinCodes document says so
     // (getAfter: also works in the same batch that creates the project).
@@ -78,13 +80,31 @@ service cloud.firestore {
         allow read: if isMember(pid);
         allow create, delete: if isAdmin(pid);
         allow update: if isAdmin(pid)
-          || (salesMayEdit(pid)
+          // Sales change the status directly (no approval needed)
+          || (salesMayEdit(pid) && !approvalOn(pid)
               && request.resource.data.diff(resource.data).affectedKeys()
-                   .hasOnly(['status', 'buyerName', 'buyerPhone', 'bookingDate', 'notes', 'updatedAt', 'updatedBy', 'updatedByName'])
+                   .hasOnly(['status', 'soldBy', 'buyerName', 'buyerPhone', 'bookingDate', 'notes', 'updatedAt', 'updatedBy', 'updatedByName'])
               // Sales can't use or undo "Not for sale" (blocked)
-              && request.resource.data.status in ['available', 'token', 'booked', 'agreement', 'sold']
+              && saleStage(request.resource.data.status)
               && resource.data.status != 'blocked'
-              && request.resource.data.updatedBy == request.auth.uid);
+              && request.resource.data.updatedBy == request.auth.uid)
+          // Approval on: Sales only file / cancel their own request; the status itself stays
+          || (salesMayEdit(pid) && approvalOn(pid)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['pending', 'buyerName', 'buyerPhone', 'bookingDate', 'notes', 'updatedAt', 'updatedBy', 'updatedByName'])
+              && resource.data.status != 'blocked'
+              && request.resource.data.updatedBy == request.auth.uid
+              && (resource.data.get('pending', null) == null || resource.data.pending.by == request.auth.uid)
+              && (request.resource.data.get('pending', null) == null
+                  || (request.resource.data.pending.by == request.auth.uid && saleStage(request.resource.data.pending.status))));
+      }
+
+      // Money: payments, instalments, commission, brokers — admins only
+      match /accounts/{plotId} {
+        allow read, write: if isAdmin(pid);
+      }
+      match /brokers/{brokerId} {
+        allow read, write: if isAdmin(pid);
       }
 
       match /layout/{chunk} {

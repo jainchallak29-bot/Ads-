@@ -29,6 +29,8 @@ export interface PlotMapProps {
   selectedIds?: string[];
   /** plots greyed out (e.g. not matching the current filter) */
   fadedIds?: Set<string> | null;
+  /** plots with a change waiting for approval (dashed orange outline) */
+  pendingIds?: Set<string> | null;
   neutral?: boolean;
   overlay?: MapOverlay;
   onTap?: (pt: Pt, unitsPerPx: number) => void;
@@ -89,7 +91,7 @@ const Background = memo(function Background({ paths, sw }: { paths: string[]; sw
   );
 });
 
-export function PlotMap({ plots, layout, bounds, selectedIds = [], fadedIds, neutral, overlay, onTap, focus, testID }: PlotMapProps) {
+export function PlotMap({ plots, layout, bounds, selectedIds = [], fadedIds, pendingIds, neutral, overlay, onTap, focus, testID }: PlotMapProps) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [tx] = useState(() => new Animated.Value(0));
   const [ty] = useState(() => new Animated.Value(0));
@@ -369,6 +371,21 @@ export function PlotMap({ plots, layout, bounds, selectedIds = [], fadedIds, neu
               </SvgText>
             ))}
             <PlotShapes geo={geo} plots={plots} sw={upp * 1.2} fadedIds={fadedIds} neutral={neutral} />
+            {pendingIds?.size
+              ? geo
+                  .filter((x) => pendingIds.has(x.id))
+                  .map((x) => (
+                    <Path
+                      key={'pend' + x.id}
+                      d={x.d}
+                      fill="none"
+                      stroke="#F08C00"
+                      strokeWidth={upp * 3}
+                      strokeDasharray={`${upp * 7},${upp * 4}`}
+                      strokeLinejoin="round"
+                    />
+                  ))
+              : null}
             {geo
               .filter((x) => selected.has(x.id))
               .map((x) => (

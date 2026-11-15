@@ -27,6 +27,12 @@ export default function RootLayout() {
           <Stack.Screen name="project/[id]/list" options={{ title: 'All plots' }} />
           <Stack.Screen name="project/[id]/settings" options={{ title: 'Project settings' }} />
           <Stack.Screen name="project/[id]/pricing" options={{ title: 'Price list' }} />
+          <Stack.Screen name="project/[id]/menu" options={{ title: 'Menu' }} />
+          <Stack.Screen name="project/[id]/dashboard" options={{ title: 'Dashboard' }} />
+          <Stack.Screen name="project/[id]/requests" options={{ title: 'Approvals' }} />
+          <Stack.Screen name="project/[id]/collections" options={{ title: 'Collections' }} />
+          <Stack.Screen name="project/[id]/brokers" options={{ title: 'Brokers & commission' }} />
+          <Stack.Screen name="project/[id]/accounts/[plotId]" options={{ title: 'Payments' }} />
         </Stack>
       </AppProvider>
     </SafeAreaProvider>

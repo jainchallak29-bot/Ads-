@@ -8,7 +8,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { StatusPicker } from '@/components/StatusPicker';
 import { Banner, Button, Card, Field, H, InfoRow, Loading, Muted, Row, Screen, Segmented, Toggle } from '@/components/ui';
+import { useAccounts } from '@/hooks/useAccounts';
 import { useProject } from '@/hooks/useProject';
+import { accountStatus, commissionAmount, commissionPaid } from '@/lib/finance';
 import { comparePlotNumbers } from '@/lib/cad/detect';
 import { premiumText, priceBreakdown } from '@/lib/pricing';
 import { features, statusLabel } from '@/lib/status';
@@ -43,9 +45,10 @@ interface Form {
 
 export default function PlotDetails() {
   const { id, plotId } = useLocalSearchParams<{ id: string; plotId: string }>();
-  const { backend, userName, toast } = useApp();
+  const { backend, userName, toast, uid } = useApp();
   const { project, plots, loading, isAdmin, canEditStatus } = useProject(id);
   const plot = plots.find((p) => p.id === plotId);
+  const { accounts, brokers } = useAccounts(id, isAdmin);
   // null until the user edits: until then the form follows the live plot data
   const [draft, setForm] = useState<Form | null>(null);
   const [saving, setSaving] = useState(false);
@@ -129,9 +132,19 @@ export default function PlotDetails() {
   const premiumList = project.pricing?.premiums || [];
   const rateSourceText = pb.rateSource === 'plot' ? 'plot rate' : pb.rateSource === 'block' ? `block ${preview.block} rate` : pb.rateSource === 'base' ? 'base rate' : '';
 
+  const needsApproval = !isAdmin && f.approval;
   const save = async () => {
     setSaving(true);
     try {
+      const { status, ...rest } = patch;
+      if (needsApproval && status) {
+        if (plot.pending && plot.pending.by !== uid) throw new Error(`${plot.pending.byName} already asked to change this plot.`);
+        if (Object.keys(rest).length) await backend.updatePlot(id, plot, rest, { name: userName });
+        await backend.requestStatus(id, plot, status, { name: userName });
+        toast('Saved. Status change sent to the admin for approval');
+        router.back();
+        return;
+      }
       await backend.updatePlot(id, plot, patch, { name: userName });
       toast('Saved — updated on all phones');
       router.back();
@@ -241,11 +254,45 @@ export default function PlotDetails() {
         <Field label="Phone" value={form.buyerPhone} onChangeText={up('buyerPhone')} editable={statusEditable} keyboardType="phone-pad" />
         {plot.buyerPhone ? <Button small variant="ghost" icon="call-outline" title={`Call ${plot.buyerPhone}`} onPress={() => Linking.openURL(`tel:${plot.buyerPhone}`)} style={{ alignSelf: 'flex-start', marginBottom: 8 }} /> : null}
         <Field label="Booking date (YYYY-MM-DD)" value={form.bookingDate} onChangeText={up('bookingDate')} editable={statusEditable} placeholder="2026-11-15" />
-        {isAdmin ? <Field label={`Amount received (${project.currency})`} value={form.amountReceived} onChangeText={up('amountReceived')} keyboardType="decimal-pad" /> : null}
+        {isAdmin && !f.payments ? <Field label={`Amount received (${project.currency})`} value={form.amountReceived} onChangeText={up('amountReceived')} keyboardType="decimal-pad" /> : null}
         <Field label="Notes" value={form.notes} onChangeText={up('notes')} editable={statusEditable} multiline />
       </Card>
 
-      {statusEditable ? <Button title="Save" icon="checkmark" onPress={save} loading={saving} disabled={!dirty} testID="save-plot" /> : null}
+      {statusEditable ? <Button title={needsApproval && patch.status ? 'Save & ask admin' : 'Save'} icon="checkmark" onPress={save} loading={saving} disabled={!dirty} testID="save-plot" /> : null}
+
+      {isAdmin && (f.payments || f.commission) ? (
+        <Card style={{ marginTop: 16 }}>
+          <H>Payments & commission</H>
+          {(() => {
+            const acc = accounts[plot.id];
+            const st = accountStatus(plot, project, acc);
+            const br = brokers.find((b) => b.id === acc?.brokerId);
+            return (
+              <>
+                {f.payments ? (
+                  <>
+                    <InfoRow label="Received" value={fmtMoney(st.paid, project.currency)} />
+                    <InfoRow label="Balance" value={fmtMoney(st.balance, project.currency)} />
+                    {st.overdue ? <InfoRow label="Overdue" value={fmtMoney(st.overdue, project.currency)} /> : null}
+                  </>
+                ) : null}
+                {f.commission && br ? (
+                  <InfoRow label="Broker" value={`${br.name} · pending ${fmtMoney(commissionAmount(plot, project, acc, br) - commissionPaid(acc), project.currency)}`} />
+                ) : null}
+              </>
+            );
+          })()}
+          <Button
+            small
+            variant="secondary"
+            icon="wallet-outline"
+            title="Open payments"
+            style={{ alignSelf: 'flex-start', marginTop: 10 }}
+            onPress={() => router.push({ pathname: '/project/[id]/accounts/[plotId]', params: { id, plotId: plot.id } })}
+            testID="open-accounts"
+          />
+        </Card>
+      ) : null}
 
       {history.length ? (
         <Card style={{ marginTop: 16 }}>

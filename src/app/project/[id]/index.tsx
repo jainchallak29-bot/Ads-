@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useApp } from '@/components/AppProvider';
@@ -32,7 +32,7 @@ const HINTS: Record<Mode, string> = {
 
 export default function ProjectMap() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { backend, userName, toast, forgetProject, rememberProject } = useApp();
+  const { backend, userName, toast, forgetProject, rememberProject, uid } = useApp();
   const data = useProject(id);
   const { project, plots, layout, isAdmin, canEditStatus } = data;
 
@@ -225,8 +225,16 @@ export default function ProjectMap() {
     }
   };
 
+  const needsApproval = !isAdmin && features(project).approval;
+  const pendingIds = useMemo(() => new Set(plots.filter((p) => p.pending).map((p) => p.id)), [plots]);
+
   const setStatus = (s: PlotStatus) => {
     if (!selected || s === selected.status) return;
+    if (needsApproval) {
+      if (selected.pending && selected.pending.by !== uid) return toast(`${selected.pending.byName} already asked to change this plot.`);
+      run(() => backend.requestStatus(id, selected, s, who), `Request sent: plot ${selected.number} → ${statusLabel(project, s)}`);
+      return;
+    }
     run(() => backend.updatePlot(id, selected, { status: s }, who), `Plot ${selected.number} marked ${statusLabel(project, s)}`);
   };
 
@@ -285,7 +293,12 @@ export default function ProjectMap() {
           title: project.name,
           headerRight: () => (
             <Row style={{ gap: 2 }}>
-              <IconButton icon="list-outline" label="All plots" onPress={() => router.push({ pathname: '/project/[id]/list', params: { id } })} testID="open-list" />
+              {features(project).approval && pendingIds.size ? (
+                <Pressable onPress={() => router.push({ pathname: '/project/[id]/requests', params: { id } })} style={styles.reqBadge} testID="open-requests-badge">
+                  <Text style={styles.reqText}>⏳ {pendingIds.size}</Text>
+                </Pressable>
+              ) : null}
+              <IconButton icon="grid-outline" label="Menu" onPress={() => router.push({ pathname: '/project/[id]/menu', params: { id } })} testID="open-menu" />
               <IconButton icon="settings-outline" label="Settings" onPress={() => router.push({ pathname: '/project/[id]/settings', params: { id } })} testID="open-settings" />
             </Row>
           ),
@@ -312,6 +325,7 @@ export default function ProjectMap() {
           bounds={project.bounds}
           selectedIds={mode === 'multi' ? multiIds : selectedId ? [selectedId] : []}
           fadedIds={fadedIds}
+          pendingIds={pendingIds}
           overlay={overlay}
           onTap={onTap}
           focus={focus}
@@ -419,6 +433,10 @@ export default function ProjectMap() {
             excludeStatuses={isAdmin ? [] : ['blocked']}
             onStatus={setStatus}
             onClose={() => setSelectedId(null)}
+            isAdmin={isAdmin}
+            uid={uid}
+            onDecide={(ok) => run(() => backend.decideRequest(id, selected, ok, who), ok ? 'Approved' : 'Rejected')}
+            onCancelRequest={() => run(() => backend.cancelRequest(id, selected, who), 'Request cancelled')}
           />
         ) : isAdmin ? (
           <View style={styles.fabWrap} pointerEvents="box-none">
@@ -474,5 +492,7 @@ const styles = StyleSheet.create({
   },
   editHint: { fontSize: 13.5, color: C.muted, marginBottom: 8 },
   editRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  reqBadge: { backgroundColor: '#F08C00', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, marginRight: 4 },
+  reqText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   fabWrap: { position: 'absolute', left: 12, bottom: 12, flexDirection: 'row', gap: 8 },
 });

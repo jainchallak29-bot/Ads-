@@ -39,7 +39,7 @@ export async function shareTextFile(name: string, content: string, mimeType: str
   download(name, new Blob([content], { type: mimeType }));
 }
 
-export async function sharePdf(name: string, html: string) {
+export async function sharePdf(name: string, html: string, _orientation: 'landscape' | 'portrait' = 'landscape') {
   // Browsers print HTML to PDF themselves ("Save as PDF" in the print dialog)
   const w = window.open('', '_blank');
   if (!w) {

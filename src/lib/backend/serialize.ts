@@ -41,5 +41,7 @@ export function docToPlot(id: string, d: Record<string, any>): Plot {
     updatedAt: d.updatedAt ?? 0,
     updatedBy: d.updatedBy ?? '',
     updatedByName: d.updatedByName ?? '',
+    soldBy: d.soldBy ?? '',
+    pending: d.pending && isPlotStatus(d.pending.status) ? d.pending : null,
   };
 }

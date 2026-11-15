@@ -132,3 +132,39 @@ test('admin manages codes and members', async () => {
   await assertSucceeds(updateDoc(doc(db('admin2'), 'projects', PID, 'plots', 'p1'), { rate: 200, pts: [0, 0, 2, 0, 2, 2] }));
   await assertFails(updateDoc(doc(db('admin2'), 'projects', PID), { ownerUid: 'admin2' }));
 });
+
+test('approval mode: sales can only request; one request at a time; admin decides', async () => {
+  const owner = db('owner');
+  await assertSucceeds(setDoc(doc(db('s2'), 'projects', PID, 'members', 's2'), { role: 'sales', name: 'S2', code: 'NEWS2345', joinedAt: 9 }));
+  await assertSucceeds(setDoc(doc(db('s3'), 'projects', PID, 'members', 's3'), { role: 'sales', name: 'S3', code: 'NEWS2345', joinedAt: 9 }));
+  await assertSucceeds(setDoc(doc(owner, 'projects', PID, 'plots', 'p9'), { number: '9', pts: [0, 0, 1, 0, 1, 1], status: 'available', pending: null }));
+  await assertSucceeds(updateDoc(doc(owner, 'projects', PID), { features: { approval: true } }));
+  const plot2 = doc(db('s2'), 'projects', PID, 'plots', 'p9');
+  const plot3 = doc(db('s3'), 'projects', PID, 'plots', 'p9');
+  // direct change no longer allowed
+  await assertFails(updateDoc(plot2, { status: 'booked', updatedBy: 's2' }));
+  // request is allowed
+  await assertSucceeds(updateDoc(plot2, { pending: { status: 'booked', by: 's2', byName: 'S2', at: 1 }, buyerName: 'Ravi', updatedBy: 's2' }));
+  // another salesperson can't overwrite or impersonate
+  await assertFails(updateDoc(plot3, { pending: { status: 'sold', by: 's3', byName: 'S3', at: 2 }, updatedBy: 's3' }));
+  await assertFails(updateDoc(plot3, { pending: null, updatedBy: 's3' }));
+  // requester can cancel
+  await assertSucceeds(updateDoc(plot2, { pending: null, updatedBy: 's2' }));
+  await assertFails(updateDoc(plot2, { pending: { status: 'blocked', by: 's2', byName: 'S2', at: 3 }, updatedBy: 's2' }));
+  await assertSucceeds(updateDoc(plot2, { pending: { status: 'sold', by: 's2', byName: 'S2', at: 3 }, updatedBy: 's2' }));
+  // admin approves
+  await assertSucceeds(updateDoc(doc(owner, 'projects', PID, 'plots', 'p9'), { status: 'sold', pending: null }));
+  await assertSucceeds(updateDoc(doc(owner, 'projects', PID), { features: { approval: false } }));
+});
+
+test('accounts and brokers are admin-only', async () => {
+  const owner = db('owner');
+  await assertSucceeds(setDoc(doc(owner, 'projects', PID, 'accounts', 'p1'), { plotId: 'p1', schedule: [], payments: [{ amount: 5 }], commissionPayments: [] }));
+  await assertSucceeds(setDoc(doc(owner, 'projects', PID, 'brokers', 'b1'), { name: 'Broker', commission: { kind: 'pct', value: 2 } }));
+  const s2 = db('s2');
+  await assertFails(getDoc(doc(s2, 'projects', PID, 'accounts', 'p1')));
+  await assertFails(getDocs(collection(s2, 'projects', PID, 'accounts')));
+  await assertFails(getDoc(doc(s2, 'projects', PID, 'brokers', 'b1')));
+  await assertFails(setDoc(doc(s2, 'projects', PID, 'accounts', 'p2'), { plotId: 'p2' }));
+  await assertFails(getDoc(doc(s2, 'projects', PID, 'private', 'counters')));
+});

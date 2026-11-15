@@ -75,6 +75,83 @@ export interface Pricing {
   premiums: Premium[];
 }
 
+export interface PendingChange {
+  status: PlotStatus;
+  by: string;
+  byName: string;
+  at: number;
+  note?: string;
+}
+
+export type CommissionKind = 'pct' | 'perUnit' | 'fixed';
+
+export interface Commission {
+  /** pct: % of plot price; perUnit: per area unit; fixed: lump sum */
+  kind: CommissionKind;
+  value: number;
+}
+
+export interface Broker {
+  id: string;
+  name: string;
+  phone?: string;
+  firm?: string;
+  commission: Commission;
+}
+
+export interface Instalment {
+  id: string;
+  label: string;
+  /** YYYY-MM-DD */
+  due: string;
+  amount: number;
+}
+
+export type PaymentMode = 'cash' | 'upi' | 'cheque' | 'bank' | 'other';
+
+export interface Payment {
+  id: string;
+  /** YYYY-MM-DD */
+  date: string;
+  amount: number;
+  mode: PaymentMode;
+  ref?: string;
+  note?: string;
+  receiptNo?: number | null;
+}
+
+export interface CommissionPayment {
+  id: string;
+  date: string;
+  amount: number;
+  note?: string;
+}
+
+/** Money details of one plot. Admins only (kept apart from the plot so Sales can't read it). */
+export interface PlotAccount {
+  plotId: string;
+  /** Final negotiated price; empty = price list price */
+  agreedPrice?: number | null;
+  schedule: Instalment[];
+  payments: Payment[];
+  brokerId?: string | null;
+  /** overrides the broker's default commission for this plot */
+  commission?: Commission | null;
+  commissionPayments: CommissionPayment[];
+  updatedAt?: number;
+  updatedByName?: string;
+}
+
+export interface Company {
+  name: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  gstin?: string;
+  /** small logo as a data: URI (PNG/JPEG) */
+  logo?: string;
+}
+
 export type Role = 'admin' | 'sales';
 
 export type DrawingUnit = 'mm' | 'cm' | 'm' | 'in' | 'ft';
@@ -114,6 +191,10 @@ export interface Plot {
   updatedAt?: number;
   updatedBy?: string;
   updatedByName?: string;
+  /** who made the sale (set when a plot first leaves Available) */
+  soldBy?: string;
+  /** a status change requested by Sales, waiting for an admin (approval feature) */
+  pending?: PendingChange | null;
 }
 
 /** Fields a Sales member may change (when the admin allows it). Must match firestore.rules. */
@@ -126,6 +207,7 @@ export const SALES_EDITABLE_FIELDS = [
   'updatedAt',
   'updatedBy',
   'updatedByName',
+  'pending',
 ] as const;
 
 export type PlotPatch = Partial<Omit<Plot, 'id'>>;
@@ -165,6 +247,7 @@ export interface Project {
   statuses?: StatusConfig;
   features?: Partial<Features>;
   pricing?: Pricing;
+  company?: Company;
 }
 
 export interface Member {
@@ -182,6 +265,7 @@ export interface Activity {
   action: string;
   from?: string;
   to?: string;
+  note?: string;
   by: string;
   byName: string;
   at: number;
