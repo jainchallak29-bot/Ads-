@@ -139,7 +139,8 @@ export function cleanText(s: string): string {
 }
 
 const PLOT_PREFIX = /^(?:PLOT|PLT)\s*(?:NO|NUMBER)?\s*[.:#-]?\s*|^NO\s*[.:#-]\s*/i;
-const PLOT_NUMBER = /^(?:[A-Z]{1,4}[\s\-/]?)?\d{1,4}(?:[\s\-/]?[A-Z]{1,2})?$/;
+// digits, or "?" when the drawing marks the number as unknown (e.g. "A-?")
+const PLOT_NUMBER = /^(?:[A-Z]{1,4}[\s\-/]?)?(?:\d{1,4}|\?{1,3})(?:[\s\-/]?[A-Z]{1,2})?$/;
 
 /** Returns the normalised plot number if the text looks like one, else null. */
 export function asPlotNumber(raw: string): string | null {

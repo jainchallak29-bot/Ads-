@@ -19,6 +19,8 @@ export interface DetectedPlot {
   /** CAD coordinates (Y up) */
   polygon: Pt[];
   source: 'polyline' | 'lines';
+  /** the text the number came from (none for unnumbered shapes) */
+  numberText?: RawText;
 }
 
 export interface DetectResult {
@@ -26,14 +28,21 @@ export interface DetectResult {
   /** plot-number texts for which no enclosing shape was found */
   unmatched: { number: string; x: number; y: number }[];
   duplicates: string[];
+  /** numbers given to plots whose number is missing or unknown in the drawing ("A-?1", "?2") */
+  placeholders: string[];
   tolerance: number;
 }
 
 const SKIP_LAYER = /DIM|HATCH|GRID|TITLE|BORDER|FRAME|DEFPOINTS|NORTH|LOGO|TREE|PLANT|ANNO|TEXT|LEGEND|VIEWPORT|VPORT|KEY/i;
 
 /** Sensible starting layer selection; the user can change it on the import screen. */
+const NOT_NUMBER_LAYER = /DIM|AREA|SIZE|SQ|LEVEL|ROAD|TITLE|NOTE/i;
+
 export function suggestLayers(cad: CadData): { boundaryLayers: string[]; numberLayers: string[] } {
-  const numberLayers = cad.layers.filter((l) => l.numberTextCount >= 2).map((l) => l.name);
+  let numberLayers = cad.layers.filter((l) => l.numberTextCount >= 2).map((l) => l.name);
+  // dimension / area layers can contain bare numbers ("15"); skip them when a real number layer exists
+  const named = numberLayers.filter((n) => !NOT_NUMBER_LAYER.test(n));
+  if (named.length) numberLayers = named;
   let boundaryLayers = cad.layers.filter((l) => l.lineCount > 0 && !SKIP_LAYER.test(l.name)).map((l) => l.name);
   if (!boundaryLayers.length) boundaryLayers = cad.layers.filter((l) => l.lineCount > 0).map((l) => l.name);
   return { boundaryLayers, numberLayers: numberLayers.length ? numberLayers : cad.layers.filter((l) => l.numberTextCount > 0).map((l) => l.name) };
@@ -96,7 +105,7 @@ export function detectPlots(cad: CadData, opts: DetectOptions): DetectResult {
     const pick = chooseText(p, inside);
     if (!pick) continue;
     pick.used = true;
-    result.push({ number: pick.number, polygon: p, source: 'polyline' });
+    result.push({ number: pick.number, polygon: p, source: 'polyline', numberText: pick.t });
   }
 
   // 2) faces formed by loose lines, for numbers still without a shape
@@ -121,7 +130,7 @@ export function detectPlots(cad: CadData, opts: DetectOptions): DetectResult {
       const pick = chooseText(p, inside);
       if (!pick) continue;
       pick.used = true;
-      result.push({ number: pick.number, polygon: p, source: 'lines' });
+      result.push({ number: pick.number, polygon: p, source: 'lines', numberText: pick.t });
     }
   }
 
@@ -139,6 +148,47 @@ export function detectPlots(cad: CadData, opts: DetectOptions): DetectResult {
     }
   }
 
+  // 4) closed shapes on layers that are almost all plots, but without a number
+  //    (e.g. number missing in the drawing) → plots named ?1, ?2 … to rename later
+  const placeholders: string[] = [];
+  if (result.length >= 5) {
+    const areas = result.map((r) => polygonArea(r.polygon)).sort((a, b) => a - b);
+    const median = areas[Math.floor(areas.length / 2)];
+    const byLayer = new Map<string, { total: number; plots: number }>();
+    for (const p of boundary.filter((b) => b.closed)) {
+      const e = byLayer.get(p.layer) || { total: 0, plots: 0 };
+      e.total++;
+      byLayer.set(p.layer, e);
+    }
+    const covered = (pt: Pt) => result.some((r) => pointInPolygon(pt, r.polygon));
+    for (const p of boundary.filter((b) => b.closed)) {
+      const lp = labelPoint(p.pts).pt;
+      if (covered(lp)) byLayer.get(p.layer)!.plots++;
+    }
+    let k = 1;
+    for (const p of boundary.filter((b) => b.closed && b.pts.length >= 3)) {
+      const e = byLayer.get(p.layer)!;
+      if (e.total < 5 || e.plots < e.total * 0.8) continue;
+      const poly = cleanPolygon(p.pts, tol * 1e-3);
+      const a = polygonArea(poly);
+      if (a < median * 0.2 || a > median * 5) continue;
+      if (covered(labelPoint(poly).pt)) continue;
+      const name = '?' + k++;
+      placeholders.push(name);
+      result.push({ number: name, polygon: poly, source: 'polyline' });
+    }
+  }
+
+  // unknown numbers written as "A-?" get a running number so they stay apart
+  const q = new Map<string, number>();
+  for (const r of result) {
+    if (!r.number.includes('?') || placeholders.includes(r.number)) continue;
+    const n = (q.get(r.number) || 0) + 1;
+    q.set(r.number, n);
+    r.number = r.number + n;
+    placeholders.push(r.number);
+  }
+
   const seen = new Map<string, number>();
   for (const r of result) seen.set(r.number, (seen.get(r.number) || 0) + 1);
   const duplicates = [...seen.entries()].filter(([, c]) => c > 1).map(([n]) => n);
@@ -147,6 +197,7 @@ export function detectPlots(cad: CadData, opts: DetectOptions): DetectResult {
     plots: result,
     unmatched: numTexts.filter((n) => !n.used).map((n) => ({ number: n.number, x: n.t.x, y: n.t.y })),
     duplicates,
+    placeholders,
     tolerance: tol,
   };
 }

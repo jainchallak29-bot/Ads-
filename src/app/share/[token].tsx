@@ -45,6 +45,7 @@ export default function CustomerPage() {
       polygon: unflatten(p.pts),
       status: (doc.st?.[id] ?? 'a') === 'a' ? 'available' : 'blocked',
       block: p.b,
+      sizeLabel: p.z,
       facing: p.f,
       isCorner: p.c,
       areaSqm: p.a,

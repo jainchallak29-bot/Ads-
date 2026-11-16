@@ -230,6 +230,8 @@ export interface Plot {
   price?: number | null;
   /** Block or phase, e.g. "A" or "Phase 2" */
   block?: string;
+  /** side lengths as written in the drawing, e.g. "7.87/7.04 x 15.71" (drawing units) */
+  sizeLabel?: string;
   /** ids of premiums from the project price list that apply to this plot */
   premiums?: string[];
   buyerName?: string;

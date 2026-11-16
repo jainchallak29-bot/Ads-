@@ -4,7 +4,7 @@
 
 import { boundsOf, isFiniteBounds } from '../geometry';
 import type { BgText, Bounds, LayoutData, Pt } from '../types';
-import { asPlotNumber, type CadData } from './dxfRead';
+import { asPlotNumber, type CadData, type RawText } from './dxfRead';
 import type { DetectedPlot } from './detect';
 
 export interface BuiltLayout {
@@ -21,7 +21,7 @@ export function coordDigits(diag: number): number {
   return Math.max(0, Math.min(6, Math.ceil(-Math.log10(Math.max(diag, 1e-9) / 1e5))));
 }
 
-export function buildLayout(cad: CadData, plots: DetectedPlot[], opts: { includeTexts: boolean } = { includeTexts: true }): BuiltLayout {
+export function buildLayout(cad: CadData, plots: DetectedPlot[], opts: { includeTexts: boolean; skipTexts?: Set<RawText> } = { includeTexts: true }): BuiltLayout {
   // Area of interest: around the plots (stray far-away CAD objects are dropped)
   let aoi: Bounds;
   if (plots.length) {
@@ -40,6 +40,8 @@ export function buildLayout(cad: CadData, plots: DetectedPlot[], opts: { include
   const bgTexts = opts.includeTexts
     ? cad.texts.filter((t) => {
         if (t.x < aoi.minX || t.x > aoi.maxX || t.y < aoi.minY || t.y > aoi.maxY) return false;
+        // area / size labels become plot details, not background text
+        if (opts.skipTexts?.has(t)) return false;
         const n = asPlotNumber(t.text);
         return !(n && plotNumbers.has(n));
       })

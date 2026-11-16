@@ -142,7 +142,12 @@ Change the code, then run the same build commands again (or use `eas update` for
   (DWG can't be read on a phone — always send the DXF.)
 * The app finds a plot wherever **lines or a polyline enclose an area that contains a plot number**.
   It works whether plots are closed polylines, separate lines (small gaps are closed automatically), or blocks with a number attribute.
-* Plot numbers can be like `12`, `12A`, `A-12`, `Plot No. 12`. Dimension texts (`30'-0"`, `9.14`), areas (`150 SQ.YD`) and road names are ignored.
+* Plot numbers can be like `12`, `12A`, `A-12`, `Plot No. 12`. Unknown numbers written as `A-?` (or plot shapes with no number)
+  are imported as `A-?1`, `?1` … so you can rename them.
+* If the area is written inside each plot (`194.62 sq yd`, `1200 sq ft`, `125 sq m`, `150 gaj`) the app can use it as the
+  **official area** (switch on the import screen), and it shows side lengths written like `7.87/7.04 x 15.71`.
+  The written areas also tell the app the drawing unit.
+* Prefixes like `A-`, `B-`, `EWS-`, `LIG-` can become **blocks** automatically.
 * After import, check the count and the red dots (numbers without a boundary). Open **Layers** to choose which layers hold
   the plot lines and the plot numbers. Anything still missing can be drawn on the phone with **Edit shapes → Add plot**.
 * Check **Drawing units**: the screen shows the typical plot size so you can confirm feet / metres / mm.

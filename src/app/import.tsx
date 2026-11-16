@@ -10,7 +10,8 @@ import { Banner, Button, Card, Field, H, Muted, Screen, Segmented, Toggle, confi
 import { useProject } from '@/hooks/useProject';
 import { buildLayout, type BuiltLayout } from '@/lib/cad/buildLayout';
 import { detectPlots, suggestLayers, type DetectResult } from '@/lib/cad/detect';
-import { readDxf, type CadData } from '@/lib/cad/dxfRead';
+import { readDxf, type CadData, type RawText } from '@/lib/cad/dxfRead';
+import { areaMismatches, inferUnitFromAreas, prefixBlocks, readPlotLabels, type PlotLabels } from '@/lib/cad/labels';
 import { pickDxf } from '@/lib/files';
 import { polygonArea } from '@/lib/geometry';
 import type { AreaUnit, DrawingUnit, LengthUnit, Plot } from '@/lib/types';
@@ -81,6 +82,11 @@ export default function ImportScreen() {
   const [unit, setUnit] = useState<DrawingUnit>('ft');
   const [showLayers, setShowLayers] = useState(false);
   const [includeTexts, setIncludeTexts] = useState(true);
+  // what is written inside the plots (official area, side lengths) and number prefixes
+  const [labels, setLabels] = useState<PlotLabels[]>([]);
+  const [prefixes, setPrefixes] = useState<string[] | null>(null);
+  const [useAreaLabels, setUseAreaLabels] = useState(true);
+  const [usePrefixBlocks, setUsePrefixBlocks] = useState(true);
 
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
@@ -117,11 +123,18 @@ export default function ImportScreen() {
     setTimeout(() => {
       try {
         const r = detectPlots(data, { boundaryLayers: bl, numberLayers: nl });
-        const b = buildLayout(data, r.plots, { includeTexts: texts });
+        const numberTexts = new Set(r.plots.map((p) => p.numberText).filter((t): t is RawText => !!t));
+        const lab = readPlotLabels(data, r.plots, numberTexts);
+        const used = new Set<RawText>(lab.flatMap((l) => l.used));
+        const b = buildLayout(data, r.plots, { includeTexts: texts, skipTexts: used });
         setResult(r);
         setBuilt(b);
+        setLabels(lab);
+        setPrefixes(prefixBlocks(r.plots.map((p) => p.number)));
         if (first) {
-          const u = pickUnit(data.drawingUnit, medianPlotArea(r));
+          // the written areas tell the unit most reliably; then the file header; then typical plot size
+          const fromAreas = inferUnitFromAreas(r.plots.map((p, i) => ({ drawn: polygonArea(p.polygon), labelSqm: lab[i]?.areaSqm ?? 0 })));
+          const u = fromAreas ?? pickUnit(data.drawingUnit, medianPlotArea(r));
           setUnit(u);
           if (!reimport) setLengthUnit(u === 'm' || u === 'mm' || u === 'cm' ? 'm' : 'ft');
         }
@@ -156,11 +169,24 @@ export default function ImportScreen() {
     return { kept, added: built.plots.length - kept, removed, removedSold: removed.filter((p) => p.status !== 'available') };
   }, [reimport, built, existing.plots]);
 
+  // official area, written size and block for the i-th detected plot (all optional)
+  const extras = (i: number): Partial<Plot> => {
+    const out: Partial<Plot> = {};
+    const l = labels[i];
+    if (useAreaLabels && l?.areaSqm) out.areaOverrideSqm = +l.areaSqm.toFixed(4);
+    if (l?.size) out.sizeLabel = l.size;
+    if (!reimport && usePrefixBlocks && prefixes?.[i]) out.block = prefixes[i];
+    return out;
+  };
+  const areaLabelCount = labels.filter((l) => l.areaSqm).length;
+  const sizeLabelCount = labels.filter((l) => l.size).length;
+  const prefixList = prefixes ? [...new Set(prefixes.filter(Boolean))] : [];
+
   const create = async () => {
     if (!built) return;
     setSaving(true);
     try {
-      const plots: Plot[] = built.plots.map((p) => ({ id: backend.newId(), number: p.number, polygon: p.polygon, status: 'available' }));
+      const plots: Plot[] = built.plots.map((p, i) => ({ id: backend.newId(), number: p.number, polygon: p.polygon, status: 'available', ...extras(i) }));
       const r = await backend.createProject(
         { name: name.trim(), location: location.trim(), drawingUnit: unit, areaUnit, lengthUnit, currency: currency.trim() || '₹', salesCanEdit, bounds: built.bounds, origin: built.origin },
         built.layout,
@@ -192,13 +218,14 @@ export default function ImportScreen() {
     try {
       const byNum = new Map(existing.plots.map((p) => [p.number, p]));
       const used = new Set<string>();
-      const upserts: Plot[] = built.plots.map((p) => {
+      const upserts: Plot[] = built.plots.map((p, i) => {
         const old = byNum.get(p.number);
         if (old && !used.has(old.id)) {
           used.add(old.id);
-          return { ...old, polygon: p.polygon, areaOverrideSqm: old.areaOverrideSqm ?? null };
+          const ex = extras(i);
+          return { ...old, polygon: p.polygon, areaOverrideSqm: ex.areaOverrideSqm ?? old.areaOverrideSqm ?? null, sizeLabel: ex.sizeLabel ?? old.sizeLabel, block: ex.block ?? old.block };
         }
-        return { id: backend.newId(), number: p.number, polygon: p.polygon, status: 'available' };
+        return { id: backend.newId(), number: p.number, polygon: p.polygon, status: 'available', ...extras(i) };
       });
       const deletes = existing.plots.filter((p) => !used.has(p.id)).map((p) => p.id);
       await backend.replaceLayout(pid, { bounds: built.bounds, origin: built.origin, drawingUnit: unit, layout: built.layout, upserts, deletes }, { name: userName });
@@ -264,6 +291,37 @@ export default function ImportScreen() {
               />
             ) : null}
             {result.duplicates.length ? <Banner tone="warn" text={`Duplicate plot numbers: ${result.duplicates.join(', ')}. You can rename them later.`} /> : null}
+            {result.placeholders.length ? (
+              <Banner
+                tone="warn"
+                text={`${result.placeholders.length} plots have no number in the drawing (or "?") and are named ${result.placeholders.slice(0, 6).join(', ')}${result.placeholders.length > 6 ? '…' : ''}. Rename them later with Edit shapes → Rename.`}
+              />
+            ) : null}
+            {areaLabelCount || sizeLabelCount ? (
+              <View style={styles.readBox} testID="labels-found">
+                <Text style={styles.readTitle}>Also read from the drawing</Text>
+                {areaLabelCount ? (
+                  <Toggle
+                    label={`Use the area written in ${areaLabelCount} plots as the official area`}
+                    hint={(() => {
+                      const n = areaMismatches(result.plots, labels, unit);
+                      return n ? `${n} of them differ from the drawn shape by more than 1% — the written area is usually the official one.` : 'They match the drawn shapes.';
+                    })()}
+                    value={useAreaLabels}
+                    onChange={setUseAreaLabels}
+                  />
+                ) : null}
+                {sizeLabelCount ? <Muted style={{ fontSize: 13, marginTop: 4 }}>Plot sizes as written in {sizeLabelCount} plots (e.g. {labels.find((l) => l.size)?.size}).</Muted> : null}
+              </View>
+            ) : null}
+            {prefixList.length && !reimport ? (
+              <Toggle
+                label={`Use number prefixes as blocks: ${prefixList.slice(0, 8).join(', ')}`}
+                hint="e.g. plot A-12 goes into block A. You can change blocks later."
+                value={usePrefixBlocks}
+                onChange={setUsePrefixBlocks}
+              />
+            ) : null}
             <View style={styles.preview}>
               <PlotMap plots={previewPlots} layout={built.layout} bounds={built.bounds} neutral overlay={{ markers }} />
             </View>
@@ -359,6 +417,8 @@ const styles = StyleSheet.create({
   disclosure: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8 },
   subTitle: { fontWeight: '700', fontSize: 15, color: C.text },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  readBox: { backgroundColor: '#F4F8FE', borderRadius: 10, padding: 10, marginBottom: 10 },
+  readTitle: { fontSize: 13, fontWeight: '700', color: C.text, marginBottom: 2 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, borderWidth: 1, borderColor: C.border, backgroundColor: '#fff', maxWidth: '100%' },
   chipOn: { backgroundColor: C.primary, borderColor: C.primary },
   chipText: { fontSize: 13, fontWeight: '600', color: C.text, flexShrink: 1 },

@@ -106,8 +106,19 @@ export function plotSides(plot: Pick<Plot, 'polygon'>, project: Pick<Project, 'd
   return edgeLengths(plot.polygon).map((l) => l * f);
 }
 
-/** "30 × 40 ft" for 4-sided plots, otherwise all sides. */
-export function fmtDimensions(plot: Pick<Plot, 'polygon'>, project: Pick<Project, 'drawingUnit' | 'lengthUnit'>): string {
+const UNIT_SHORT: Record<DrawingUnit, string> = { mm: 'mm', cm: 'cm', m: 'm', in: 'in', ft: 'ft' };
+
+/**
+ * Plot size: the side lengths written in the drawing when there are any
+ * (e.g. "7.87/7.04 x 15.71 m"), else "30 × 40 ft" from the shape.
+ */
+export function fmtDimensions(plot: Pick<Plot, 'polygon' | 'sizeLabel'>, project: Pick<Project, 'drawingUnit' | 'lengthUnit'>): string {
+  if (plot.sizeLabel) return /[a-z'"]/i.test(plot.sizeLabel.replace(/\bx\b/gi, '')) ? plot.sizeLabel : `${plot.sizeLabel} ${UNIT_SHORT[project.drawingUnit]}`;
+  return fmtShapeDimensions(plot, project);
+}
+
+/** "30 × 40 ft" for 4-sided plots, otherwise all sides — measured from the shape. */
+export function fmtShapeDimensions(plot: Pick<Plot, 'polygon'>, project: Pick<Project, 'drawingUnit' | 'lengthUnit'>): string {
   const s = plotSides(plot, project);
   const u = project.lengthUnit === 'ft' ? 'ft' : 'm';
   if (s.length === 4) {

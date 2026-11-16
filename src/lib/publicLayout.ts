@@ -13,6 +13,8 @@ export interface PublicPlot {
   n: string;
   pts: number[];
   b?: string;
+  /** size as written in the drawing */
+  z?: string;
   f?: string;
   c?: boolean;
   /** area in square metres */
@@ -67,6 +69,7 @@ export function buildPublic(project: Project, plots: Plot[], showPrices: boolean
       n: p.number,
       pts: flatten(p.polygon).map((v) => +v.toFixed(3)),
       ...(p.block ? { b: p.block } : {}),
+      ...(p.sizeLabel ? { z: p.sizeLabel } : {}),
       ...(p.facing ? { f: p.facing } : {}),
       ...(p.isCorner ? { c: true } : {}),
       a: +plotAreaSqm(p, project.drawingUnit).toFixed(3),
