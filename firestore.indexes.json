@@ -1,0 +1,20 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "layout",
+      "fieldPath": "d",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "layout",
+      "fieldPath": "json",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "plots",
+      "fieldPath": "pts",
+      "indexes": []
+    }
+  ]
+}

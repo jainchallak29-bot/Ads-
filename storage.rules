@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Photos & documents attached to plots. Each file has a record in Firestore
+// (projects/{pid}/files/{fileId}); these rules read that record and the
+// member list, so access follows the project codes. Private files: admins only.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /projects/{pid}/files/{fileId}/{name} {
+      function member() {
+        return request.auth != null
+          && firestore.exists(/databases/(default)/documents/projects/$(pid)/members/$(request.auth.uid));
+      }
+      function admin() {
+        return member() && firestore.get(/databases/(default)/documents/projects/$(pid)/members/$(request.auth.uid)).data.role == 'admin';
+      }
+      function meta() {
+        return firestore.get(/databases/(default)/documents/projects/$(pid)/files/$(fileId)).data;
+      }
+
+      allow read: if member() && (meta().private == false || admin());
+      allow create: if member()
+        && meta().uploadedBy == request.auth.uid
+        && request.resource.size < 20 * 1024 * 1024;
+      allow update: if false;
+      allow delete: if admin() || (member() && meta().uploadedBy == request.auth.uid);
+    }
+  }
+}
